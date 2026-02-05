@@ -6,6 +6,11 @@ mod irc_client;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .level(tauri_plugin_log::log::LevelFilter::Info)
+                .build(),
+        )
         .setup(|app| {
             let (tx, rx) = tokio::sync::mpsc::channel(100);
             app.manage(IrcClientState { irc_tx: tx.clone() });

@@ -50,6 +50,8 @@ pub(crate) async fn send_message(
     channel: String,
     message: String,
 ) -> Result<(), String> {
+    trace!("Sending message: {}", message);
+
     state
         .irc_tx
         .send(IrcCommand::Send { channel, message })

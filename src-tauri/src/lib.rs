@@ -8,7 +8,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(
             tauri_plugin_log::Builder::new()
-                .level(tauri_plugin_log::log::LevelFilter::Info)
+                .level(tauri_plugin_log::log::LevelFilter::Trace)
+                .filter(|metadata| metadata.target().starts_with("irc_client_lib"))
                 .build(),
         )
         .setup(|app| {

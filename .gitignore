@@ -157,3 +157,5 @@ package
 .ionide
 
 # End of https://www.toptal.com/developers/gitignore/api/git,jetbrains+all,visualstudiocode,rust,deno,svelte
+
+build

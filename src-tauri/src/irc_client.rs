@@ -1,8 +1,11 @@
 use crate::IrcClientState;
 use futures::StreamExt;
 use irc::client::prelude::*;
+use serde::Serialize;
 use tauri::Emitter;
+use tauri_plugin_log::log::{debug, error, trace};
 
+#[derive(Debug)]
 pub(crate) enum IrcCommand {
     Send { channel: String, message: String },
     JoinChannel(String),
@@ -11,6 +14,13 @@ pub(crate) enum IrcCommand {
 
 pub(crate) struct IrcClient {
     client: Client,
+}
+
+#[derive(Clone, Serialize)]
+struct IrcMessage {
+    from: String,
+    to: String,
+    message: String,
 }
 
 impl IrcClient {
@@ -32,21 +42,57 @@ pub(crate) async fn run_irc_task(
 ) -> Result<(), anyhow::Error> {
     let mut stream = irc_client.client.stream()?;
 
-    while let Some(message) = stream.next().await.transpose()? {
-        match message.command {
-            Command::PRIVMSG(msg_target, msg) => {
-                let _ = app_handle.emit("irc:message", (msg_target, msg));
+    loop {
+        tokio::select! {
+            Some(cmd) = rx.recv() => {
+                trace!("received command: {:?}", cmd);
+
+                match cmd {
+                    IrcCommand::Send{ channel, message } => {
+                        let _ = irc_client.client.send(Command::PRIVMSG(channel, message));
+                    }
+                    IrcCommand::JoinChannel(_) => {}
+                    IrcCommand::Quit => {}
+                }
+
+
             }
-            _ => {}
+            Some(result) = stream.next() => {
+                match result {
+                    Ok(message) => {
+                        match message.command {
+                            Command::PRIVMSG(msg_target, msg) => {
+                                let from = {
+                                    if let Some(x) = message.prefix {
+                                        match x {
+                                            Prefix::ServerName(servername) => servername,
+                                            Prefix::Nickname(nickname, _, _) => nickname
+                                        }
+                                    } else {
+                                        "".to_string()
+                                    }
+                                };
+
+                                let _ = app_handle.emit("irc:message", IrcMessage { from, to: msg_target, message: msg });
+                            }
+                            _ => {
+                                debug!("{:?}", message);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("IRC client error: {}", e);
+                    }
+                }
+            }
         }
     }
-
-    Ok(())
 }
 
 #[tauri::command]
 pub(crate) async fn send_message(
     state: tauri::State<'_, IrcClientState>,
+    app_handle: tauri::AppHandle,
     channel: String,
     message: String,
 ) -> Result<(), String> {
@@ -54,8 +100,22 @@ pub(crate) async fn send_message(
 
     state
         .irc_tx
-        .send(IrcCommand::Send { channel, message })
+        .send(IrcCommand::Send {
+            channel: channel.clone(),
+            message: message.clone(),
+        })
         .await
+        .map_err(|e| e.to_string())?;
+
+    app_handle
+        .emit(
+            "irc:message",
+            IrcMessage {
+                from: "me".to_string(),
+                to: channel,
+                message,
+            },
+        )
         .map_err(|e| e.to_string())
     // TODO: 자체 에러 타입 구현
     /*

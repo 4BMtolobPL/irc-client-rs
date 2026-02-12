@@ -1,8 +1,10 @@
-use crate::irc_client::IrcClient;
-use tauri::menu::*;
-use tauri::{Emitter, Manager};
+use crate::kirc::state::IRCClientState;
+use tauri::menu::{MenuBuilder, SubmenuBuilder};
+use tauri::Manager;
+use tauri_plugin_log::log;
 
-mod irc_client;
+mod error;
+mod kirc;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -10,13 +12,11 @@ pub fn run() {
         .plugin(
             // Logging
             tauri_plugin_log::Builder::new()
-                .level(tauri_plugin_log::log::LevelFilter::Trace)
-                .filter(|metadata| metadata.target().starts_with("irc_client_lib"))
+                .level(log::LevelFilter::Debug)
+                .level_for("irc_client_lib", log::LevelFilter::Trace)
                 .build(),
         )
         .setup(|app| {
-            let app_handle = app.handle();
-
             // Menu
             let file_menu = SubmenuBuilder::new(app, "File")
                 // .submenu_icon(menu_image) // Optional: Add an icon to the submenu
@@ -24,42 +24,22 @@ pub fn run() {
                 .text("quit", "Quit")
                 .build()?;
 
+            let app_handle = app.handle();
             let menu = MenuBuilder::new(app_handle).items(&[&file_menu]).build()?;
 
             app.set_menu(menu)?;
 
-            /*// Update individual menu item text
-            menu.get("status")
-                .unwrap()
-                .as_menuitem_unchecked()
-                .set_text("Status: Ready")?;*/
-
-            // IRC
-            let (tx, rx) = tokio::sync::mpsc::channel(100);
-            app.manage(IrcClientState { irc_tx: tx.clone() });
-
-            let app_handle_irc = app.handle().clone();
-
-            tauri::async_runtime::spawn(async move {
-                match IrcClient::new().await {
-                    Ok(client) => {
-                        let _ = irc_client::run_irc_task(client, rx, app_handle_irc).await;
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to connect to IRC client: {}", e);
-                        let _ = app_handle_irc.emit("irc:init_error", e.to_string());
-                    }
-                }
-            });
+            // kirc
+            app.manage(IRCClientState::new());
 
             Ok(())
         })
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![irc_client::send_message])
+        .invoke_handler(tauri::generate_handler![
+            kirc::commands::connect_server,
+            kirc::commands::join_channel,
+            kirc::commands::send_message
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
-}
-
-struct IrcClientState {
-    irc_tx: tokio::sync::mpsc::Sender<irc_client::IrcCommand>,
 }

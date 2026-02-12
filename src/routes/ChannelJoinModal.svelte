@@ -1,11 +1,11 @@
 <script lang="ts">
-    import {currentChannel, currentServerId, servers} from "../stores/irc.svelte";
+    import {currentChannel, currentServerId, servers} from "../stores/stores.svelte.js";
 
     type ChannelJoinForm = {
         name: string;
     };
 
-    let form = $state<ChannelJoinForm>({ name: "" });
+    let form = $state<ChannelJoinForm>({name: ""});
     let error = $state<string | null>(null);
 
     function validate() {
@@ -57,10 +57,9 @@
 
         <form class="space-y-3" onsubmit={(e) => {e.preventDefault(); submit();}}>
             <input
+                    bind:value={form.name}
                     class="w-full rounded-md border px-3 py-2 dark:bg-neutral-800"
                     placeholder="#channel"
-                    bind:value={form.name}
-                    autofocus
             />
 
             {#if error}
@@ -69,15 +68,15 @@
 
             <footer class="flex justify-end gap-2 pt-3">
                 <button
-                        type="button"
                         class="rounded-md px-3 py-1.5 text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800"
                         onclick={close}
+                        type="button"
                 >
                     취소
                 </button>
                 <button
-                        type="submit"
                         class="rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700"
+                        type="submit"
                 >
                     추가
                 </button>

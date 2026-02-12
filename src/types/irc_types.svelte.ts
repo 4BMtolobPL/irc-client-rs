@@ -17,8 +17,5 @@ export type IrcServerState = {
     channels: Map<string, IrcChannel>;
 }
 
-export type IrcServerStatus =
-    | "connecting"
-    | "connected"
-    | "disconnected"
-    | "error";
+// TODO: enum으로 바꿀수 있지 않을까?
+export type IrcServerStatus = | "connecting" | "connected" | "disconnected" | "error";

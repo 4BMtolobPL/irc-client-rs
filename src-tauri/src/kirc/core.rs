@@ -1,5 +1,5 @@
 use crate::kirc::emits::emit_disconnected;
-use crate::kirc::payloads::{IrcMessagePayload, ServerStatusPayload, SystemMessagePayload};
+use crate::kirc::payloads::{ServerStatusPayload, SystemMessagePayload, UiEventPayload};
 use crate::kirc::state::IRCClientState;
 use crate::kirc::types::{ServerCommand, ServerId, ServerStatus};
 use anyhow::Context;
@@ -69,23 +69,108 @@ pub(super) fn start_event_loop(
     });
 }
 
-fn handle_message(server_id: &str, msg: Message, app_handle: &AppHandle) -> anyhow::Result<()> {
-    match msg.command {
+fn handle_message(server_id: &str, message: Message, app_handle: &AppHandle) -> anyhow::Result<()> {
+    match message.command {
         Command::PRIVMSG(target, content) => {
-            let payload = IrcMessagePayload {
+            if let Some(prefix) = message.prefix {
+                let payload = UiEventPayload::UserMessage {
+                    server_id: server_id.to_string(),
+                    channel: target,
+                    nick: get_sender(prefix),
+                    content,
+                    timestamp: chrono::Utc::now().timestamp_millis() as u64,
+                };
+
+                app_handle
+                    .emit("kirc:event", payload)
+                    .context("Failed to send message")?;
+            } else {
+                debug!("PRIVMSG message missing prefix");
+            }
+        }
+        Command::JOIN(chanlist, _chankey, _real_name) => {
+            if let Some(prefix) = message.prefix {
+                let payload = UiEventPayload::Join {
+                    server_id: server_id.to_string(),
+                    channel: chanlist,
+                    nick: get_sender(prefix),
+                };
+
+                app_handle
+                    .emit("kirc:event", payload)
+                    .context("Failed to send message")?;
+            } else {
+                debug!("JOIN message missing prefix");
+            }
+        }
+        Command::PART(chanlist, comment) => {
+            if let Some(prefix) = message.prefix {
+                let payload = UiEventPayload::Part {
+                    server_id: server_id.to_string(),
+                    channel: chanlist,
+                    nick: get_sender(prefix),
+                    reason: comment,
+                };
+
+                app_handle
+                    .emit("kirc:event", payload)
+                    .context("Failed to send message")?;
+            } else {
+                debug!("PART message missing prefix");
+            }
+        }
+        Command::QUIT(comment) => {
+            if let Some(prefix) = message.prefix {
+                let payload = UiEventPayload::Quit {
+                    server_id: server_id.to_string(),
+                    nick: get_sender(prefix),
+                    reason: comment,
+                };
+
+                app_handle
+                    .emit("kirc:event", payload)
+                    .context("Failed to send message")?;
+            } else {
+                debug!("QUIT message missing prefix");
+            }
+        }
+        Command::NICK(nickname) => {
+            if let Some(prefix) = message.prefix {
+                let payload = UiEventPayload::Nick {
+                    server_id: server_id.to_string(),
+                    old_nick: get_sender(prefix),
+                    new_nick: nickname,
+                };
+
+                app_handle
+                    .emit("kirc:event", payload)
+                    .context("Failed to send message")?;
+            } else {
+                debug!("NICK message missing prefix");
+            }
+        }
+        Command::TOPIC(channel, topic) => {
+            let payload = UiEventPayload::Topic {
                 server_id: server_id.to_string(),
-                channel: target,
-                from: get_sender(msg.prefix.unwrap()),
-                message: content,
-                timestamp: chrono::Utc::now().timestamp_millis(),
+                channel,
+                topic,
             };
 
             app_handle
-                .emit("kirc:message", payload)
+                .emit("kirc:event", payload)
+                .context("Failed to send message")?;
+        }
+        Command::ERROR(message) => {
+            let payload = UiEventPayload::Error {
+                server_id: server_id.to_string(),
+                message,
+            };
+
+            app_handle
+                .emit("kirc:event", payload)
                 .context("Failed to send message")?;
         }
         Command::Response(Response::RPL_WELCOME, _) => {
-            trace!("Response WELCOME | server_id: {}", server_id);
             {
                 let state = app_handle.state::<IRCClientState>();
                 let mut statuses = state.statuses.lock().expect("Failed to lock statuses");

@@ -1,9 +1,16 @@
 <script lang="ts">
     import {listen} from "@tauri-apps/api/event";
     import {invoke} from "@tauri-apps/api/core";
-    import type {IrcMessage} from "../types/irc_types.svelte.js";
+    import type {ChatMessage} from "../types/irc_types.svelte.js";
     import ServerModal from "./ServerModal.svelte";
-    import {currentChannel, currentServerId, servers} from "../stores/stores.svelte.js";
+    import {
+        addMessage,
+        addServerMessage,
+        currentChannelName,
+        currentServerId,
+        ensureChannel,
+        servers
+    } from "../stores/stores.svelte.js";
     import ChannelJoinModal from "./ChannelJoinModal.svelte";
     import MessageView from "./MessageView.svelte";
 
@@ -12,24 +19,178 @@
 
     let showServerModal = $state<boolean>(false);
 
-    type Payload = {
+    /*type Payload = {
         serverId: string;
         channel: string;
         from: string;
         message: string;
         timestamp: number;
-    }
+    }*/
 
-    listen<Payload>("kirc:message", (event) => {
+    /*listen<Payload>("kirc:message", (event) => {
         const {serverId, channel, from, message, timestamp} = event.payload;
-        onIrcMessage(serverId, channel, {from, message, timestamp});
+        onIrcMessage(serverId, channel, {type: "user", id: serverId, nickname: from, content: message, timestamp});
+    });*/
+
+    listen<UiEventPayload>("kirc:event", (event) => {
+        const payload: UiEventPayload = event.payload;
+
+        switch (payload.type) {
+            case "UserMessage":
+                ensureChannel(payload.server_id, payload.channel);
+                addMessage(payload.server_id, payload.channel, {
+                    type: "user",
+                    id: crypto.randomUUID(),
+                    nickname: payload.nick,
+                    content: payload.content,
+                    timestamp: payload.timestamp,
+                });
+                break;
+            case "Join":
+                ensureChannel(payload.server_id, payload.channel);
+
+                servers.update((map) => {
+                    const server = map.get(payload.server_id);
+                    if (!server) return map;
+
+                    const channel = server.channels.get(payload.channel);
+                    if (!channel) return map;
+
+                    channel.users.add(payload.nick);
+
+                    channel.messages.push({
+                        type: "system",
+                        id: crypto.randomUUID(),
+                        content: `${payload.nick} joined the channel`,
+                        timestamp: Date.now(),
+                    });
+
+                    // 🔥 내가 JOIN 했을 경우
+                    if (payload.nick === server.nickname) {
+                        currentServerId.set(payload.server_id);
+                        currentChannelName.set(payload.channel);
+                    }
+
+                    return map;
+                });
+
+                break;
+            case "Part":
+                servers.update((map) => {
+                    const server = map.get(payload.server_id);
+                    if (!server) return map;
+
+                    const channel = server.channels.get(payload.channel);
+                    if (!channel) return map;
+
+                    channel.users.delete(payload.nick);
+
+                    channel.messages.push({
+                        type: "system",
+                        id: crypto.randomUUID(),
+                        content: `${payload.nick} left the channel`,
+                        timestamp: Date.now(),
+                    });
+
+                    // 🔥 내가 나간 경우
+                    if (payload.nick === server.nickname) {
+                        currentChannelName.set(null);
+                    }
+
+                    return map;
+                });
+
+                break;
+            case "Quit":
+                servers.update((map) => {
+                    const server = map.get(payload.server_id);
+                    if (!server) return map;
+
+                    // 🔥 모든 채널 순회
+                    for (const channel of server.channels.values()) {
+                        if (channel.users.has(payload.nick)) {
+                            channel.users.delete(payload.nick);
+
+                            channel.messages.push({
+                                type: "system",
+                                id: crypto.randomUUID(),
+                                content: `${payload.nick} quit${payload.reason ? ` (${payload.reason})` : ""}`,
+                                timestamp: Date.now(),
+                            });
+                        }
+                    }
+
+                    return map;
+                });
+                break;
+            case "Nick":
+                servers.update((map) => {
+                    const server = map.get(payload.server_id);
+                    if (!server) return map;
+
+                    // 🔥 내가 닉네임 변경한 경우
+                    if (server.nickname === payload.old_nick) {
+                        server.nickname = payload.new_nick;
+                    }
+
+                    for (const channel of server.channels.values()) {
+                        if (channel.users.has(payload.old_nick)) {
+                            channel.users.delete(payload.old_nick);
+                            channel.users.add(payload.new_nick);
+
+                            channel.messages.push({
+                                type: "system",
+                                id: crypto.randomUUID(),
+                                content: `${payload.old_nick} is now known as ${payload.new_nick}`,
+                                timestamp: Date.now(),
+                            });
+                        }
+                    }
+
+                    return map;
+                });
+
+                break;
+            case "Topic":
+                ensureChannel(payload.server_id, payload.channel);
+
+                servers.update((map) => {
+                    const server = map.get(payload.server_id);
+                    if (!server) return map;
+
+                    const channel = server.channels.get(payload.channel);
+                    if (!channel) return map;
+
+                    channel.topic = payload.topic;
+
+                    channel.messages.push({
+                        type: "system",
+                        id: crypto.randomUUID(),
+                        content: `Topic set to: ${payload.topic}`,
+                        timestamp: Date.now(),
+                    });
+
+                    return map;
+                });
+
+
+                break;
+            case "Error":
+                addServerMessage(payload.server_id, {
+                    type: "system",
+                    id: crypto.randomUUID(),
+                    content: `Error: ${payload.message}`,
+                    timestamp: Date.now(),
+                });
+                break;
+        }
     });
 
     const sendMessage = async (): Promise<void> => {
         await invoke("send_message", {channel: "#test", message: msgInput});
     }
 
-    const onIrcMessage = (serverId: string, channelName: string, msg: IrcMessage) => {
+    const onIrcMessage = (serverId: string, channelName: string, msg: ChatMessage) => {
         servers.update((map) => {
             const server = map.get(serverId);
             if (!server) return map;
@@ -41,7 +202,7 @@
 
             if (
                 serverId !== $currentServerId ||
-                channelName !== $currentChannel
+                channelName !== $currentChannelName
             ) {
                 channel.unread += 1;
             }
@@ -52,7 +213,7 @@
 
     const selectServer = (serverId: string) => {
         currentServerId.set(serverId);
-        currentChannel.set(null);
+        currentChannelName.set(null);
     }
 
     const selectChannel = (name: string) => {
@@ -71,7 +232,7 @@
             return map;
         });
 
-        currentChannel.set(name);
+        currentChannelName.set(name);
     }
 
     const openChannelModal = () => {
@@ -102,8 +263,8 @@
                     {#if server.id === $currentServerId}
                         <ul class="ml-4 mt-1 space-y-1 text-sm">
                             {#each Array.from(server.channels.values()) as channel}
-                                <li class="cursor-pointer rounded px-2 py-1 {channel.name === $currentChannel ? 'bg-neutral-300 dark:bg-neutral-600' : 'hover:bg-neutral-200 dark:hover:bg-neutral-700'}">
-                                    <button onclick={() => currentChannel.set(channel.name)}>
+                                <li class="cursor-pointer rounded px-2 py-1 {channel.name === $currentChannelName ? 'bg-neutral-300 dark:bg-neutral-600' : 'hover:bg-neutral-200 dark:hover:bg-neutral-700'}">
+                                    <button onclick={() => currentChannelName.set(channel.name)}>
                                         <span class="flex items-center gap-1">
                                             # {channel.name}
                                             {#if channel.unread > 0}

@@ -1,15 +1,15 @@
 <script lang="ts">
-    import {currentChannel, currentServerId, servers} from "../stores/stores.svelte.js";
-    import type {IrcMessage} from "../types/irc_types.svelte";
+    import {currentChannelName, currentServerId, servers} from "../stores/stores.svelte.js";
+    import type {ChatMessage} from "../types/irc_types.svelte";
 
     let container: HTMLDivElement;
     let autoScroll = true;
 
-    let messages = $derived.by((): IrcMessage[] => {
+    let messages = $derived.by((): ChatMessage[] => {
         if (!$currentServerId) return [];
-        if (!$currentChannel) return [];
+        if (!$currentChannelName) return [];
 
-        return $servers.get($currentServerId)?.channels.get($currentChannel)?.messages ?? []
+        return $servers.get($currentServerId)?.channels.get($currentChannelName)?.messages ?? []
     });
 
     const onScroll = () => {

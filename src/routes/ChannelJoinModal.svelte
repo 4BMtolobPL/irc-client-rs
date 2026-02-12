@@ -1,5 +1,5 @@
 <script lang="ts">
-    import {currentChannel, currentServerId, servers} from "../stores/stores.svelte.js";
+    import {currentChannelName, currentServerId, servers} from "../stores/stores.svelte.js";
 
     type ChannelJoinForm = {
         name: string;
@@ -42,7 +42,7 @@
             return map;
         });
 
-        currentChannel.set(form.name);
+        currentChannelName.set(form.name);
         close();
     }
 

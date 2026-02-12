@@ -3,18 +3,26 @@
     import {invoke} from "@tauri-apps/api/core";
     import type {IrcMessage} from "../types/irc_types.svelte.js";
     import ServerModal from "./ServerModal.svelte";
-    import {currentChannel, currentServerId, servers} from "../stores/irc.svelte";
+    import {currentChannel, currentServerId, servers} from "../stores/stores.svelte.js";
     import ChannelJoinModal from "./ChannelJoinModal.svelte";
     import MessageView from "./MessageView.svelte";
 
     let showChannelModal = $state<boolean>(false);
-    let ircMsgList = $state<IrcMessage[]>([]);
     let msgInput = $state<string>("");
 
     let showServerModal = $state<boolean>(false);
 
-    listen<IrcMessage>("irc:message", (event) => {
-        ircMsgList.push(event.payload)
+    type Payload = {
+        serverId: string;
+        channel: string;
+        from: string;
+        message: string;
+        timestamp: number;
+    }
+
+    listen<Payload>("kirc:message", (event) => {
+        const {serverId, channel, from, message, timestamp} = event.payload;
+        onIrcMessage(serverId, channel, {from, message, timestamp});
     });
 
     const sendMessage = async (): Promise<void> => {
@@ -83,14 +91,12 @@
             {#each Array.from($servers.values()) as server}
                 <li>
                     <!-- Server Row -->
-                    <div class="flex items-center justify-between rounded px-2 py-1 cursor-pointer {server.id === $currentServerId ? 'bg-neutral-200 dark:bg-neutral-700' : 'hover:bg-neutral-200 dark:hover:bg-neutral-700'}">
-                        <button onclick={() => selectServer(server.id)}>
-                            <span class="truncate">{server.name}</span>
-                        </button>
-
+                    <button class="w-full flex items-center justify-between rounded px-2 py-1 {server.id === $currentServerId ? 'bg-neutral-200 dark:bg-neutral-700' : 'hover:bg-neutral-200 dark:hover:bg-neutral-700'}"
+                            onclick={() => selectServer(server.id)}>
+                        <span class="truncate">{server.name}</span>
                         <!-- Status Dot -->
-                        <span class="h-2 w-2 rounded-full {server.status === 'connected' ? 'bg-green-500' : server.status === 'connecting' ? 'bg-yellow-500' : 'bg-red-500'}"/>
-                    </div>
+                        <span class="h-2 w-2 rounded-full {server.status === 'connected' ? 'bg-green-500' : server.status === 'connecting' ? 'bg-yellow-500' : 'bg-red-500'}"></span>
+                    </button>
 
                     <!-- Channel List -->
                     {#if server.id === $currentServerId}
@@ -111,8 +117,10 @@
                             {/each}
 
                             <!-- Channel Add -->
-                            <li class="cursor-pointer rounded px-2 py-1 text-neutral-500 hover:bg-neutral-200 dark:hover:bg-neutral-700">
-                                <button onclick={() => openChannelModal()}>+ 채널 추가</button>
+                            <li>
+                                <button class="w-full cursor-pointer flex items-center justify-between rounded px-2 py-1 text-neutral-500 hover:bg-neutral-200 dark:hover:bg-neutral-700"
+                                        onclick={() => openChannelModal()}>+ 채널 추가
+                                </button>
                             </li>
                         </ul>
                     {/if}
@@ -120,8 +128,10 @@
             {/each}
 
             <!-- Server Add -->
-            <li class="mt-2 cursor-pointer rounded px-2 py-1 text-sm text-neutral-600 hover:bg-neutral-200 dark:text-neutral-400 dark:hover:bg-neutral-700">
-                <button class="w-full h-full" onclick={() => openServerModal()}>+ 서버 추가</button>
+            <li>
+                <button class="w-full cursor-pointer flex items-center justify-between mt-2 rounded px-2 py-1 text-sm text-neutral-600 hover:bg-neutral-200 dark:text-neutral-400 dark:hover:bg-neutral-700"
+                        onclick={() => openServerModal()}>+ 서버 추가
+                </button>
             </li>
         </ul>
     </aside>
@@ -176,7 +186,5 @@
 {#if showServerModal}
     <ServerModal bind:showServerModal></ServerModal>
 {/if}
-
-
 <style>
 </style>

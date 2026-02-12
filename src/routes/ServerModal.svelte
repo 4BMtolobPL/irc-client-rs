@@ -1,9 +1,14 @@
 <script lang="ts">
+    import {invoke} from "@tauri-apps/api/core";
+    import {listen} from "@tauri-apps/api/event";
+    import {servers} from "../stores/stores.svelte.js";
+    import type {IrcServerStatus} from "../types/irc_types.svelte";
+
     interface Props {
         showServerModal: boolean;
     }
 
-    let { showServerModal = $bindable() }: Props = $props();
+    let {showServerModal = $bindable()}: Props = $props();
 
     type ServerConnectForm = {
         host: string;
@@ -33,11 +38,35 @@
         return Object.keys(e).length === 0;
     }
 
-    const submit = () => {
+    const submit = async () => {
         if (!validate()) return;
         connecting = true;
 
+        let payload = {
+            server_id: "new",
+            ...form
+        };
+
+        servers.update((map) => {
+            if (map.has(payload.server_id)) {
+                return map;
+            }
+            map.set(payload.server_id, {
+                id: payload.server_id,
+                channels: new Map(),
+                host: payload.host,
+                name: payload.host,
+                nickname: payload.nickname,
+                port: payload.port,
+                status: "connecting",
+                tls: payload.tls,
+            });
+            return map;
+        });
+
         // 여기서 parent로 connect 이벤트 emit
+        let response = await invoke("connect_server", {payload: payload});
+        // TODO: 에러 처리 해야됨
     }
 
     const cancel = () => {
@@ -45,6 +74,27 @@
         // 모달 닫기
         showServerModal = false;
     }
+
+    const reconnect = (previousPayload: Payload) => {
+        invoke("connect_server", previousPayload);
+    }
+
+    listen<ServerStatusPayload>("kirc:server_status", (e) => {
+        const serverStatusPayload = e.payload;
+
+        servers.update((map) => {
+            const server = map.get(serverStatusPayload.serverId);
+            if (!server) {
+                console.log(`Server not found: ${serverStatusPayload.serverId}`);
+                return map
+            }
+
+            server.status = serverStatusPayload.status.toLowerCase() as IrcServerStatus; // TODO: Fix it
+            return map;
+        });
+        connecting = false;
+        showServerModal = false;
+    })
 </script>
 
 <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
@@ -52,7 +102,8 @@
         <!-- Header -->
         <header class="mb-4 flex items-center justify-between">
             <h2 class="text-lg font-semibold">서버 연결</h2>
-            <button class="text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200" onclick={cancel}>✕</button>
+            <button class="text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200" onclick={cancel}>✕
+            </button>
         </header>
 
         <!-- Form -->
@@ -61,7 +112,7 @@
             <div>
                 <label class="block text-sm font-medium mb-1">
                     서버 주소
-                <input class="w-full rounded-md border px-3 py-2 dark:bg-neutral-800" bind:value={form.host}/>
+                    <input bind:value={form.host} class="w-full rounded-md border px-3 py-2 dark:bg-neutral-800"/>
                 </label>
                 {#if errors.host}
                     <p class="text-sm text-red-500">{errors.host}</p>
@@ -73,18 +124,18 @@
                 <div class="flex-1">
                     <label class="block text-sm font-medium mb-1">
                         포트
-                    <input
-                            type="number"
-                            class="w-full rounded-md border px-3 py-2
+                        <input
+                                bind:value={form.port}
+                                class="w-full rounded-md border px-3 py-2
                                dark:bg-neutral-800"
-                            bind:value={form.port}
-                    />
+                                type="number"
+                        />
                     </label>
                 </div>
 
                 <div class="flex items-end">
                     <label class="flex items-center gap-2 text-sm">
-                        <input type="checkbox" bind:checked={form.tls} />
+                        <input bind:checked={form.tls} type="checkbox"/>
                         TLS
                     </label>
                 </div>
@@ -94,11 +145,11 @@
             <div>
                 <label class="block text-sm font-medium mb-1">
                     닉네임
-                <input
-                        class="w-full rounded-md border px-3 py-2
+                    <input
+                            bind:value={form.nickname}
+                            class="w-full rounded-md border px-3 py-2
                            dark:bg-neutral-800"
-                        bind:value={form.nickname}
-                />
+                    />
                 </label>
                 {#if errors.nickname}
                     <p class="text-sm text-red-500">{errors.nickname}</p>
@@ -108,20 +159,17 @@
             <!-- Actions -->
             <footer class="flex justify-end gap-2 pt-4">
                 <button
-                        type="button"
-                        class="rounded-md px-4 py-2 text-sm
-                           hover:bg-neutral-100
-                           dark:hover:bg-neutral-800"
+                        class="rounded-md cursor-pointer px-4 py-2 text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800"
                         onclick={cancel}
+                        type="button"
                 >
                     취소
                 </button>
 
                 <button
-                        type="submit"
+                        class="rounded-md cursor-pointer bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
                         disabled={connecting}
-                        class="rounded-md bg-blue-600 px-4 py-2 text-sm text-white
-                           hover:bg-blue-700 disabled:opacity-50"
+                        type="submit"
                 >
                     {connecting ? "연결 중..." : "연결"}
                 </button>

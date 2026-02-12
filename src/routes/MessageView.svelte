@@ -1,5 +1,5 @@
 <script lang="ts">
-    import {currentChannel, currentServerId, servers} from "../stores/irc.svelte";
+    import {currentChannel, currentServerId, servers} from "../stores/stores.svelte.js";
     import type {IrcMessage} from "../types/irc_types.svelte";
 
     let container: HTMLDivElement;

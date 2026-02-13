@@ -24,16 +24,6 @@ pub(super) struct SystemMessagePayload {
     pub(super) message: String,
 }
 
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(super) struct IrcMessagePayload {
-    pub(super) server_id: ServerId,
-    pub(super) channel: String,
-    pub(super) from: String,
-    pub(super) message: String,
-    pub(super) timestamp: i64,
-}
-
 #[derive(Debug, Serialize, Clone)]
 #[serde(tag = "type")]
 pub(super) enum UiEventPayload {

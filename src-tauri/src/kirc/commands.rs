@@ -7,7 +7,7 @@ use anyhow::Context;
 use irc::client::data::Config;
 use irc::client::Client;
 use tauri::{AppHandle, Emitter, State};
-use tauri_plugin_log::log::trace;
+use tauri_plugin_log::log::info;
 
 #[tauri::command]
 pub(crate) async fn connect_server(
@@ -15,7 +15,7 @@ pub(crate) async fn connect_server(
     state: State<'_, IRCClientState>,
     app_handle: AppHandle,
 ) -> Result<(), MyCustomError> {
-    trace!("connect server: {:?}", payload);
+    info!("Tauri command: connect server invoked, payload: {payload:?}");
 
     {
         let mut statuses = state.statuses.lock().expect("Statuses lock poisoned");
@@ -81,6 +81,8 @@ pub(crate) fn join_channel(
     channel: String,
     state: State<IRCClientState>,
 ) -> Result<(), MyCustomError> {
+    info!("Tauri command: join channel invoked, server_id: {server_id}, channel: {channel}");
+
     let servers = state.servers.lock().expect("Servers lock poisoned");
     let server = servers.get(&server_id).context("Can't find server")?;
 
@@ -99,6 +101,8 @@ pub(crate) fn send_message(
     message: String,
     state: State<IRCClientState>,
 ) -> Result<(), MyCustomError> {
+    info!("Tauri command: send message invoked, server_id: {server_id}, target: {target}, message: {message}");
+
     let servers = state.servers.lock().expect("Servers lock poisoned");
     let server = servers.get(&server_id).context("Can't find server")?;
 

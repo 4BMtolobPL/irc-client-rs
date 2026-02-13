@@ -4,7 +4,7 @@ use std::sync::Mutex;
 use tokio::sync::mpsc::UnboundedSender;
 
 pub(super) struct ServerHandle {
-    pub(super) tx: UnboundedSender<ServerCommand>
+    pub(super) tx: UnboundedSender<ServerCommand>,
 }
 
 pub(crate) struct IRCClientState {

@@ -2,17 +2,12 @@ use serde::Serialize;
 
 pub(super) type ServerId = String;
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Default)]
 pub(super) enum ServerStatus {
     Connecting,
     Connected,
+    #[default]
     Disconnected,
-}
-
-impl Default for ServerStatus {
-    fn default() -> Self {
-        Self::Disconnected
-    }
 }
 
 pub(crate) enum ServerCommand {

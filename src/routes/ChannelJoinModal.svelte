@@ -1,5 +1,12 @@
 <script lang="ts">
-    import {currentChannelName, currentServerId, servers} from "../stores/stores.svelte.js";
+    import {invoke} from "@tauri-apps/api/core";
+    import {currentServerId} from "../stores/stores.svelte";
+
+    interface Props {
+        showChannelModal: boolean;
+    }
+
+    let {showChannelModal = $bindable()}: Props = $props();
 
     type ChannelJoinForm = {
         name: string;
@@ -27,7 +34,9 @@
         const serverId = $currentServerId;
         if (!serverId) return;
 
-        servers.update((map) => {
+        invoke("join_channel", {serverId: serverId, channel: form.name});
+
+        /*servers.update((map) => {
             const server = map.get(serverId);
             if (!server) return map;
 
@@ -42,12 +51,13 @@
             return map;
         });
 
-        currentChannelName.set(form.name);
+        currentChannelName.set(form.name);*/
         close();
     }
 
     function close() {
         // 부모에서 모달 닫기
+        showChannelModal = false;
     }
 </script>
 

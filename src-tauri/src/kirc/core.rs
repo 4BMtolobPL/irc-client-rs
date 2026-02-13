@@ -6,7 +6,7 @@ use anyhow::Context;
 use futures::prelude::*;
 use irc::client::prelude::*;
 use tauri::{AppHandle, Emitter, Manager};
-use tauri_plugin_log::log::{debug, trace};
+use tauri_plugin_log::log::{debug, error, trace};
 use tokio::sync::mpsc::UnboundedReceiver;
 
 pub(super) fn start_event_loop(
@@ -15,8 +15,6 @@ pub(super) fn start_event_loop(
     mut rx: UnboundedReceiver<ServerCommand>,
     app_handle: AppHandle,
 ) {
-    trace!("Starting event loop");
-
     tokio::spawn(async move {
         let state = app_handle.state::<IRCClientState>();
 
@@ -30,7 +28,6 @@ pub(super) fn start_event_loop(
         };
 
         loop {
-            trace!("Start stream loop");
             tokio::select! {
                 // IRC → Frontend
                 Some(result) = stream.next() => {
@@ -53,6 +50,16 @@ pub(super) fn start_event_loop(
                         ServerCommand::Privmsg { target, message } => {
                             trace!("Command Privmsg");
                             let _ = client.send_privmsg(&target, &message);
+
+                            match Message::with_tags(None, Some(client.current_nickname()), "PRIVMSG", vec![&target, &message]) {
+                                Ok(msg) => {
+                                    trace!("Create echo: {:?}", msg);
+                                    handle_message(&server_id, msg, &app_handle).expect("Failed to handle message");
+                                }
+                                Err(_) => {
+                                    error!("Failed to create sended message");
+                                }
+                            }
                         }
                         ServerCommand::Quit => {
                             trace!("Command Quit");
@@ -72,6 +79,7 @@ pub(super) fn start_event_loop(
 fn handle_message(server_id: &str, message: Message, app_handle: &AppHandle) -> anyhow::Result<()> {
     match message.command {
         Command::PRIVMSG(target, content) => {
+            trace!("PRIVMSG | target {}, content: {}", target, content);
             if let Some(prefix) = message.prefix {
                 let payload = UiEventPayload::UserMessage {
                     server_id: server_id.to_string(),

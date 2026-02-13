@@ -1,8 +1,9 @@
 <script lang="ts">
     import {invoke} from "@tauri-apps/api/core";
     import {listen} from "@tauri-apps/api/event";
-    import {servers} from "../stores/stores.svelte.js";
     import type {IrcServerStatus} from "../types/irc_types.svelte";
+    import {SvelteMap} from "svelte/reactivity";
+    import {servers} from "../stores/stores.svelte";
 
     interface Props {
         showServerModal: boolean;
@@ -43,30 +44,33 @@
         connecting = true;
 
         let payload = {
-            server_id: "new",
+            server_id: crypto.randomUUID(), // TODO: 바꿀거
             ...form
         };
-
-        servers.update((map) => {
-            if (map.has(payload.server_id)) {
-                return map;
-            }
-            map.set(payload.server_id, {
-                id: payload.server_id,
-                channels: new Map(),
-                host: payload.host,
-                name: payload.host,
-                nickname: payload.nickname,
-                port: payload.port,
-                status: "connecting",
-                tls: payload.tls,
-            });
-            return map;
-        });
 
         // 여기서 parent로 connect 이벤트 emit
         let response = await invoke("connect_server", {payload: payload});
         // TODO: 에러 처리 해야됨
+
+        servers.update((map) => {
+            const newMap = new SvelteMap(map);
+            if (newMap.has(payload.server_id)) return newMap;
+
+            newMap.set(payload.server_id, {
+                id: payload.server_id,
+                name: payload.host,
+                host: payload.host,
+                port: payload.port,
+                tls: payload.tls,
+                nickname: payload.nickname,
+                status: "connecting",
+
+                channels: new SvelteMap(),
+                serverMessages: [],
+            });
+
+            return newMap;
+        });
     }
 
     const cancel = () => {
@@ -75,23 +79,22 @@
         showServerModal = false;
     }
 
-    const reconnect = (previousPayload: Payload) => {
+    /*const reconnect = (previousPayload: Payload) => {
         invoke("connect_server", previousPayload);
-    }
+    }*/
 
     listen<ServerStatusPayload>("kirc:server_status", (e) => {
         const serverStatusPayload = e.payload;
 
         servers.update((map) => {
-            const server = map.get(serverStatusPayload.serverId);
-            if (!server) {
-                console.log(`Server not found: ${serverStatusPayload.serverId}`);
-                return map
-            }
+            const newMap = new SvelteMap(map);
+            const server = newMap.get(serverStatusPayload.serverId);
+            if (!server) return newMap;
 
             server.status = serverStatusPayload.status.toLowerCase() as IrcServerStatus; // TODO: Fix it
-            return map;
+            return newMap;
         });
+
         connecting = false;
         showServerModal = false;
     })

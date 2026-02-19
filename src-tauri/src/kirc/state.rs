@@ -19,4 +19,15 @@ impl IRCClientState {
             statuses: Mutex::new(HashMap::new()),
         }
     }
+
+    pub(crate) fn shutdown(&self) {
+        for server in self
+            .servers
+            .lock()
+            .expect("IRCClientState shutdown servers mutex poisoned")
+            .values()
+        {
+            let _ = server.tx.send(ServerCommand::Quit);
+        }
+    }
 }

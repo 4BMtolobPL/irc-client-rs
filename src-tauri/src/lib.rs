@@ -1,7 +1,10 @@
 use crate::kirc::state::IRCClientState;
-use tauri::menu::{MenuBuilder, SubmenuBuilder};
-use tauri::Manager;
+use anyhow::Context;
+use tauri::menu::{Menu, MenuBuilder, MenuItem, SubmenuBuilder};
+use tauri::tray::TrayIconBuilder;
+use tauri::{Manager, Window, WindowEvent};
 use tauri_plugin_log::log;
+use tauri_plugin_log::log::warn;
 
 mod error;
 mod kirc;
@@ -27,13 +30,42 @@ pub fn run() {
             let app_handle = app.handle();
             let menu = MenuBuilder::new(app_handle).items(&[&file_menu]).build()?;
 
-            app.set_menu(menu)?;
+            app.set_menu(menu).context("Can not initialize menu")?;
+
+            // System tray
+            let tray_quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let tray_show = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;
+            let tray_menu = Menu::with_items(app, &[&tray_show, &tray_quit])?;
+            let _tray = TrayIconBuilder::new()
+                .menu(&tray_menu)
+                .on_menu_event(|app_handle, event| match event.id.as_ref() {
+                    "show" => {
+                        if let Some(window) = app_handle.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.unminimize();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    "quit" => {
+                        if let Some(state) = app_handle.try_state::<IRCClientState>() {
+                            state.shutdown();
+                        }
+                        app_handle.exit(0);
+                    }
+                    _ => {
+                        warn!("Unhandled event: {:?}", event.id);
+                    }
+                })
+                .show_menu_on_left_click(false)
+                .icon(app.default_window_icon().unwrap().clone())
+                .build(app)?;
 
             // kirc
             app.manage(IRCClientState::new());
 
             Ok(())
         })
+        .on_window_event(on_window_event)
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             kirc::commands::connect_server,
@@ -42,4 +74,11 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+fn on_window_event(window: &Window, event: &WindowEvent) {
+    if let WindowEvent::CloseRequested { api, .. } = event {
+        api.prevent_close(); // 실제 종료 막기
+        let _ = window.hide(); // 창만 숨김
+    }
 }

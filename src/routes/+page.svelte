@@ -7,12 +7,12 @@
     import {
         addMessage,
         addServerMessage,
-        addUnreadMessage,
         currentChannelName,
         currentServerId,
         ensureChannel,
         removeUnreadMessage,
-        servers
+        servers,
+        serverUnread
     } from "../stores/stores.svelte";
     import {SvelteMap} from "svelte/reactivity";
     import type {UiEventPayload} from "../types/payloads.svelte";
@@ -36,10 +36,6 @@
                     content: payload.content,
                     timestamp: payload.timestamp,
                 });
-
-                if ($currentChannelName && $currentChannelName !== payload.channel) {
-                    addUnreadMessage(payload.server_id, payload.channel, 1);
-                }
 
                 break;
             }
@@ -74,7 +70,7 @@
 
                     return newMap;
                 });
-                
+
                 break;
             }
             case "Part": {
@@ -246,13 +242,26 @@
         <div class="p-2 text-sm font-semibold">Servers</div>
         <ul class="space-y-1 px-2">
             {#each $servers as [serverId, server] (serverId)}
+                {@const isSelected = serverId === $currentServerId}
+                {@const unread = $serverUnread.get(server.id) ?? 0}
                 <li>
                     <!-- Server Row -->
-                    <button class="w-full flex items-center justify-between rounded px-2 py-1 {serverId === $currentServerId ? 'bg-neutral-200 dark:bg-neutral-700' : 'hover:bg-neutral-200 dark:hover:bg-neutral-700'}"
+                    <button class="w-full flex items-center justify-between rounded px-3 py-2 {isSelected ? 'bg-neutral-200 dark:bg-neutral-700' : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'}"
                             onclick={() => selectServer(serverId)}>
+                        <!-- Left -->
                         <span class="truncate">{server.name}</span>
-                        <!-- Status Dot -->
-                        <span class="h-2 w-2 rounded-full {server.status === 'connected' ? 'bg-green-500' : (server.status === 'connecting' || server.status === 'registering') ? 'bg-yellow-500' : 'bg-red-500'}"></span>
+
+                        <!-- Right -->
+                        <span class="flex items-center gap-2 shrink-0">
+                            {#if !isSelected && unread > 0}
+                                  <span class="min-w-5 px-2 py-0.5 text-xs font-medium bg-red-500 text-white rounded-full text-center">
+                                      {unread > 99 ? '99+' : unread}
+                                  </span>
+                            {/if}
+
+                            <!-- Status Dot -->
+                            <span class="h-2 w-2 rounded-full {server.status === 'connected' ? 'bg-green-500' : (server.status === 'connecting' || server.status === 'registering') ? 'bg-yellow-500' : 'bg-red-500'}"></span>
+                        </span>
                     </button>
 
                     <!-- Channel List -->
@@ -266,7 +275,7 @@
                                             {channelName}
                                             {#if channel.unread > 0}
                                                 <span class="rounded-full bg-red-500 px-1.5 text-xs text-white">
-                                                    {channel.unread}
+                                                    {channel.unread > 99 ? '99+' : channel.unread}
                                                 </span>
                                             {/if}
                                         </span>

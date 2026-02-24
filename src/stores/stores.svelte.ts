@@ -77,6 +77,11 @@ export const addServerMessage = (serverId: string, message: ChatMessage) => {
     });
 }
 
+export const currentServerNickname = derived([servers, currentServerId], ([$servers, $serverId]): string | null => {
+    if (!$serverId) return null;
+    return $servers.get($serverId)?.nickname ?? null;
+});
+
 export const currentChannel = derived([servers, currentServerId, currentChannelName], ([$servers, $serverId, $channelName]) => {
     if (!$serverId || !$channelName) return null;
     return $servers.get($serverId)?.channels.get($channelName) ?? null;

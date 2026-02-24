@@ -4,6 +4,8 @@
     import type {IrcServerStatus} from "../types/irc_types.svelte";
     import {SvelteMap} from "svelte/reactivity";
     import {servers} from "../stores/stores.svelte";
+    import {ServerStatus} from "../types/dto.svelte";
+    import type {ServerStatusPayload} from "../types/payloads.svelte";
 
     interface Props {
         showServerModal: boolean;
@@ -27,6 +29,7 @@
 
     let errors = $state<Record<string, string>>({});
     let connecting = $state(false);
+    let serverId = $state<string | null>(null);
 
     const validate = () => {
         const e: Record<string, string> = {};
@@ -42,15 +45,14 @@
     const submit = async () => {
         if (!validate()) return;
         connecting = true;
+        serverId = crypto.randomUUID();
 
         let payload = {
-            server_id: crypto.randomUUID(), // TODO: 바꿀거
+            server_id: serverId,
             ...form
         };
 
-        // 여기서 parent로 connect 이벤트 emit
-        let response = await invoke("connect_server", {payload: payload});
-        // TODO: 에러 처리 해야됨
+        await invoke("connect_server", {payload: payload});
 
         servers.update((map) => {
             const newMap = new SvelteMap(map);
@@ -74,9 +76,11 @@
     }
 
     const cancel = () => {
-        if (connecting) return;
-        // 모달 닫기
-        showServerModal = false;
+        if (connecting) {
+            invoke("cancel_connect", {serverId: serverId});
+        } else {
+            showServerModal = false;
+        }
     }
 
     /*const reconnect = (previousPayload: Payload) => {
@@ -85,6 +89,8 @@
 
     listen<ServerStatusPayload>("kirc:server_status", (e) => {
         const serverStatusPayload = e.payload;
+
+        console.log("kirc:server_status", serverStatusPayload);
 
         servers.update((map) => {
             const newMap = new SvelteMap(map);
@@ -95,8 +101,13 @@
             return newMap;
         });
 
-        connecting = false;
-        showServerModal = false;
+        if (serverStatusPayload.status === ServerStatus.Connected) {
+            connecting = false;
+            showServerModal = false;
+        } else if (serverStatusPayload.status === ServerStatus.Failed) {
+            connecting = false;
+            // TODO: 서버 연결 실패
+        }
     })
 </script>
 

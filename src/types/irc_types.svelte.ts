@@ -17,4 +17,4 @@ export type Server = {
 }
 
 // TODO: enum으로 바꿀수 있지 않을까?
-export type IrcServerStatus = | "connecting" | "connected" | "disconnected" | "error";
+export type IrcServerStatus = | "connecting" | "connected" | "registering" | "disconnected" | "error";

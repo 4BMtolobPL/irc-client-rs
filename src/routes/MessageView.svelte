@@ -1,5 +1,5 @@
 <script lang="ts">
-    import {currentChannel} from "../stores/stores.svelte";
+    import {currentChannel, currentServerNickname} from "../stores/stores.svelte";
 
     let container: HTMLDivElement;
     let autoScroll = true;
@@ -20,7 +20,7 @@
     {#each $currentChannel?.messages ?? [] as msg}
         {#if msg.type === "user"}
             <div class="mb-1">
-                <span class="font-semibold">{msg.nickname}</span>
+                <span class="font-semibold">{($currentServerNickname && $currentServerNickname === msg.nickname) ? `@${msg.nickname}` : msg.nickname}</span>
                 <span class="ml-1 whitespace-pre-wrap">{msg.content}</span>
             </div>
         {/if}

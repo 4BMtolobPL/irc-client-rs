@@ -1,17 +1,31 @@
 use serde::Serialize;
+use std::fmt::{Display, Formatter};
 
 pub(super) type ServerId = String;
 
-#[derive(Serialize, Clone, Default)]
+/// 프론트 전달용 State
+#[derive(Serialize, Clone)]
 pub(super) enum ServerStatus {
     Connecting,
     Connected,
-    #[default]
+    Registering,
     Disconnected,
+    Disconnecting,
+    Failed,
 }
 
 pub(crate) enum ServerCommand {
     Join(String),
     Privmsg { target: String, message: String },
     Quit,
+}
+
+impl Display for ServerCommand {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ServerCommand::Join(x) => write!(f, "Join, {x}"),
+            ServerCommand::Privmsg { target, message } => write!(f, "Privmsg, {target}, {message}"),
+            ServerCommand::Quit => write!(f, "Quit"),
+        }
+    }
 }

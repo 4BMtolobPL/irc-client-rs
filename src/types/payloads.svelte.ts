@@ -1,8 +1,10 @@
-type ServerStatusPayload = {
+import type {ServerStatus} from "./dto.svelte";
+
+export type ServerStatusPayload = {
     serverId: string, status: ServerStatus,
 }
 
-type UiEventPayload =
+export type UiEventPayload =
     | { type: "UserMessage"; server_id: string; channel: string; nick: string; content: string; timestamp: number }
     | { type: "Join"; server_id: string; channel: string; nick: string }
     | { type: "Part"; server_id: string; channel: string; nick: string; reason?: string }

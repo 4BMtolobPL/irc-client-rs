@@ -1,7 +1,7 @@
 use crate::kirc::types::{ServerId, ServerStatus};
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub(crate) struct ConnectServerPayload {
     pub(super) server_id: ServerId,
     pub(super) host: String,

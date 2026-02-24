@@ -5,14 +5,17 @@
     import ChannelJoinModal from "./ChannelJoinModal.svelte";
     import MessageView from "./MessageView.svelte";
     import {
-        addMessage, addServerMessage,
+        addMessage,
+        addServerMessage,
         addUnreadMessage,
         currentChannelName,
         currentServerId,
-        ensureChannel, removeUnreadMessage,
+        ensureChannel,
+        removeUnreadMessage,
         servers
     } from "../stores/stores.svelte";
     import {SvelteMap} from "svelte/reactivity";
+    import type {UiEventPayload} from "../types/payloads.svelte";
 
     let showChannelModal = $state<boolean>(false);
     let msgInput = $state<string>("");
@@ -21,6 +24,7 @@
 
     listen<UiEventPayload>("kirc:event", (event) => {
         const payload: UiEventPayload = event.payload;
+        console.log("kirc:event", payload);
 
         switch (payload.type) {
             case "UserMessage": {
@@ -70,9 +74,7 @@
 
                     return newMap;
                 });
-
-
-
+                
                 break;
             }
             case "Part": {
@@ -250,7 +252,7 @@
                             onclick={() => selectServer(serverId)}>
                         <span class="truncate">{server.name}</span>
                         <!-- Status Dot -->
-                        <span class="h-2 w-2 rounded-full {server.status === 'connected' ? 'bg-green-500' : server.status === 'connecting' ? 'bg-yellow-500' : 'bg-red-500'}"></span>
+                        <span class="h-2 w-2 rounded-full {server.status === 'connected' ? 'bg-green-500' : (server.status === 'connecting' || server.status === 'registering') ? 'bg-yellow-500' : 'bg-red-500'}"></span>
                     </button>
 
                     <!-- Channel List -->

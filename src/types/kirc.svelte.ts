@@ -7,7 +7,7 @@ export type ChatMessage = | {
 }
 
 export type Channel = {
-    name: string; topic?: string; messages: ChatMessage[]; users: SvelteSet<string>; unread: number;
+    name: string; topic?: string; messages: ChatMessage[]; users: SvelteSet<string>; unread: number; locked: boolean;
 }
 
 export type Server = {

@@ -56,6 +56,9 @@ pub fn run() {
             kirc::commands::send_message,
             kirc::commands::cancel_connect,
             kirc::commands::disconnect_server,
+            kirc::commands::lock_channel,
+            kirc::commands::unlock_channel,
+            kirc::commands::is_channel_locked,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

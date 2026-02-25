@@ -10,12 +10,14 @@
         currentChannelName,
         currentServerId,
         ensureChannel,
+        isLocked,
         removeUnreadMessage,
         servers,
-        serverUnread
+        serverUnread,
+        updateChannelLock
     } from "../stores/stores.svelte";
     import {SvelteMap} from "svelte/reactivity";
-    import type {UiEventPayload} from "../types/payloads.svelte";
+    import type {ChannelLockChangedEvent, UiEventPayload} from "../types/payloads.svelte";
 
     let showChannelModal = $state<boolean>(false);
     let msgInput = $state<string>("");
@@ -209,12 +211,19 @@
         }
     });
 
+    listen<ChannelLockChangedEvent>("kirc:channel_lock_changed", (event) => {
+        const payload = event.payload;
+        updateChannelLock(payload.serverId, payload.channel, payload.locked)
+    });
+
     const sendMessage = async (): Promise<void> => {
         await invoke("send_message", {
             serverId: $currentServerId,
             target: $currentChannelName,
             message: msgInput
         });
+
+        msgInput = "";
     }
 
     const selectServer = (serverId: string) => {
@@ -233,6 +242,19 @@
 
     const openServerModal = () => {
         showServerModal = true;
+    }
+
+    const toggleLock = () => {
+        const serverId = $currentServerId;
+        const channel = $currentChannelName;
+
+        if ($isLocked) {
+            invoke("unlock_channel", {payload: {serverId, channel}});
+        } else {
+            invoke("lock_channel", {payload: {serverId, channel}});
+        }
+
+        msgInput = "";
     }
 </script>
 
@@ -311,19 +333,20 @@
         <!-- 입력 영역 -->
         <section class="border-t border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-3">
             <form class="flex gap-2" onsubmit={sendMessage}>
+                <button class="text-sm px-2 py-1 rounded hover:bg-neutral-200 dark:hover:bg-neutral-700"
+                        onclick={toggleLock} type="button">{$isLocked ? "🔒" : "🔓"}</button>
                 <input bind:value={msgInput}
                        class="flex-1 rounded px-3 py-2 text-sm bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 focus:outline-none focus:ring-1 focus:ring-sky-500"
-                       placeholder="메시지 입력" type="text"/>
-                <button class="rounded px-4 py-2 text-sm bg-sky-600 text-white hover:bg-sky-500 active:bg-sky-700"
-                        type="submit">Send
+                       disabled={$isLocked} placeholder={$isLocked ? "Channel is locked" : "Type a message"}
+                       type="text"/>
+                <button class="rounded px-4 py-2 text-sm bg-sky-600 text-white hover:bg-sky-500 active:bg-sky-700 disabled:opacity-40"
+                        disabled={$isLocked} type="submit">Send
                 </button>
             </form>
         </section>
     </main>
 </div>
 
-
-<!--<ChannelModal bind:showChannelDialog></ChannelModal>-->
 {#if showChannelModal}
     <ChannelJoinModal bind:showChannelModal></ChannelJoinModal>
 {/if}

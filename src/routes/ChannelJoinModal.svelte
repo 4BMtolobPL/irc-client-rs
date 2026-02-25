@@ -36,22 +36,6 @@
 
         invoke("join_channel", {serverId: serverId, channel: form.name});
 
-        /*servers.update((map) => {
-            const server = map.get(serverId);
-            if (!server) return map;
-
-            if (!server.channels.has(form.name)) {
-                server.channels.set(form.name, {
-                    name: form.name,
-                    messages: [],
-                    unread: 0,
-                });
-            }
-
-            return map;
-        });
-
-        currentChannelName.set(form.name);*/
         close();
     }
 

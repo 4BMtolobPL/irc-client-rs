@@ -1,4 +1,11 @@
-import type {ServerStatus} from "./dto.svelte";
+export enum ServerStatus {
+    Connecting = "Connecting",
+    Connected = "Connected",
+    Registering = "Registering",
+    Disconnected = "Disconnected",
+    Disconnecting = "Disconnecting",
+    Failed = "Failed",
+}
 
 export type ServerStatusPayload = {
     serverId: string, status: ServerStatus,
@@ -12,3 +19,9 @@ export type UiEventPayload =
     | { type: "Nick"; server_id: string; old_nick: string; new_nick: string }
     | { type: "Topic"; server_id: string; channel: string; topic?: string }
     | { type: "Error"; server_id: string; message: string };
+
+export type ChannelLockChangedEvent = {
+    serverId: string;
+    channel: string;
+    locked: boolean;
+}

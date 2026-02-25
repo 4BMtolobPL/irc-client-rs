@@ -65,3 +65,18 @@ pub(super) enum UiEventPayload {
         message: String,
     },
 }
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ChannelLockPayload {
+    pub(super) server_id: ServerId,
+    pub(super) channel: String,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct ChannelLockChangedEvent {
+    pub(super) server_id: ServerId,
+    pub(super) channel: String,
+    pub(super) locked: bool,
+}

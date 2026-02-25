@@ -1,4 +1,4 @@
-import type {ChatMessage, Server} from "../types/irc_types.svelte";
+import type {ChatMessage, Server} from "../types/kirc.svelte";
 import {SvelteMap, SvelteSet} from "svelte/reactivity";
 import {derived, get, writable} from "svelte/store";
 
@@ -15,7 +15,7 @@ export const ensureChannel = (serverId: string, channelName: string) => {
 
         if (!server.channels.has(channelName)) {
             server.channels.set(channelName, {
-                name: channelName, messages: [], users: new SvelteSet(), unread: 0,
+                name: channelName, messages: [], users: new SvelteSet(), unread: 0, locked: false
             });
         }
 
@@ -70,6 +70,21 @@ export const addServerMessage = (serverId: string, message: ChatMessage) => {
     });
 }
 
+export const updateChannelLock = (serverId: string, channelName: string, locked: boolean) => {
+    servers.update((map) => {
+        const newMap = new SvelteMap(map);
+        const server = newMap.get(serverId);
+        if (!server) return newMap;
+
+        const channel = server.channels.get(channelName);
+        if (!channel) return newMap;
+
+        channel.locked = locked;
+
+        return newMap;
+    });
+}
+
 export const currentServerNickname = derived([servers, currentServerId], ([$servers, $serverId]): string | null => {
     if (!$serverId) return null;
     return $servers.get($serverId)?.nickname ?? null;
@@ -92,4 +107,9 @@ export const serverUnread = derived(servers, ($servers) => {
     }
 
     return result;
+});
+
+export const isLocked = derived([currentChannel], ([$currentChannel]) => {
+    if (!$currentChannel) return true;
+    return $currentChannel.locked;
 });

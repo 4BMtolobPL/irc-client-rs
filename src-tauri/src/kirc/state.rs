@@ -1,4 +1,5 @@
 use crate::kirc::types::{ServerCommand, ServerId, ServerStatus};
+use anyhow::anyhow;
 use std::cmp::PartialEq;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU8, Ordering};
@@ -103,8 +104,14 @@ impl AppState {
     }
 }
 
+#[derive(Default)]
+pub(super) struct ChannelState {
+    pub(super) locked: bool,
+}
+
 pub(crate) struct IRCClientState {
     pub(super) servers: Mutex<HashMap<ServerId, ServerRuntime>>,
+    pub(super) channel_states: Mutex<HashMap<String, HashMap<String, ChannelState>>>,
     app_state: AtomicU8,
 }
 
@@ -112,6 +119,7 @@ impl IRCClientState {
     pub(crate) fn new() -> Self {
         Self {
             servers: Mutex::new(HashMap::new()),
+            channel_states: Mutex::new(HashMap::new()),
             app_state: AtomicU8::new(AppState::Running.as_u8()),
         }
     }
@@ -144,10 +152,26 @@ impl IRCClientState {
 
         // 3. 병렬 graceful 종료
         futures::future::join_all(
-            runtimes.into_iter().map(|runtime| runtime.graceful_shutdown())
-        ).await;
+            runtimes
+                .into_iter()
+                .map(|runtime| runtime.graceful_shutdown()),
+        )
+        .await;
 
         // 4. 최종 상태 AppState -> Terminated
         self.set_app_state(AppState::Terminated);
+    }
+
+    pub(super) fn is_channel_locked(&self, server_id: &str, channel: &str) -> anyhow::Result<bool> {
+        let channels = self
+            .channel_states
+            .lock()
+            .map_err(|e| anyhow!("channel state mutex poisoned"))?;
+
+        Ok(channels
+            .get(server_id)
+            .and_then(|m| m.get(channel))
+            .map(|s| s.locked)
+            .unwrap_or(false))
     }
 }

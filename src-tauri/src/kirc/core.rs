@@ -64,16 +64,8 @@ pub(super) async fn server_actor(
 
     {
         let state = app_handle.state::<IRCClientState>();
-        let mut servers = state.servers.lock().unwrap();
-        if let Some(ServerRuntime::Connecting { handle }) = servers.remove(&server_id) {
-            trace!("server_actor status connecting to registering");
-            servers.insert(
-                server_id,
-                ServerRuntime::Registering {
-                    tx: tx.clone(),
-                    handle,
-                },
-            );
+        if let Some(server) = state.get_server(server_id) {
+            server.transition_to_registering(tx.clone());
         }
     }
 
@@ -125,17 +117,19 @@ pub(super) async fn server_actor(
 
     {
         let state = app_handle.state::<IRCClientState>();
-        let mut servers = state.servers.lock().unwrap();
-        servers.insert(server_id, ServerRuntime::Disconnected);
+        if let Some(server) = state.get_server(server_id) {
+            server.transition_to_disconnected();
+        }
     }
     let _ = emit_server_status(&app_handle, server_id, ServerStatus::Disconnected);
 }
 
 fn fail_state(server_id: ServerId, app_handle: AppHandle, message: String) {
     let state = app_handle.state::<IRCClientState>();
-    let mut servers = state.servers.lock().unwrap();
 
-    servers.insert(server_id, ServerRuntime::Failed { error: message });
+    if let Some(server) = state.get_server(server_id) {
+        server.transition_to_failed(message);
+    }
 
     let _ = emit_server_status(&app_handle, server_id, ServerStatus::Failed);
 }
@@ -186,10 +180,8 @@ fn handle_message(
             trace!("handle_message RPL_WELCOME");
             {
                 let state = app_handle.state::<IRCClientState>();
-                let mut servers = state.servers.lock().expect("Failed to lock servers");
-                if let Some(ServerRuntime::Registering { tx, handle }) = servers.remove(&server_id)
-                {
-                    servers.insert(server_id, ServerRuntime::Connected { tx, handle });
+                if let Some(server) = state.get_server(server_id) {
+                    server.transition_to_connected();
                 }
             }
 

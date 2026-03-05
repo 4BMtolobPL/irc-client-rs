@@ -2,7 +2,7 @@ use crate::error::MyCustomError;
 use crate::kirc::commands::payload::{ChannelLockPayload, ConnectServerPayload};
 use crate::kirc::core::server_actor;
 use crate::kirc::emits::{emit_channel_lock_changed, emit_server_added, emit_server_status};
-use crate::kirc::state::{IRCClientState, ServerRuntime};
+use crate::kirc::state::{IRCClientState, ServerRuntime, ServerState};
 use crate::kirc::types::{ServerCommand, ServerId, ServerStatus};
 use anyhow::{anyhow, Context};
 use tauri::{AppHandle, State};
@@ -22,19 +22,13 @@ pub(crate) async fn connect_server(
     }
 
     let server_id = payload.server_id().unwrap_or(Uuid::now_v7());
-    let mut servers = state.servers.lock().unwrap();
 
-    match servers.get(&server_id) {
-        Some(
-            ServerRuntime::Connecting { .. }
-            | ServerRuntime::Registering { .. }
-            | ServerRuntime::Connected { .. },
-        ) => {
-            return Err(MyCustomError::IRCServer(
-                "Already connecting or connected".into(),
-            ));
+    if let Some(server) = state.get_server(server_id) {
+        if server.is_active() {
+            return Err(MyCustomError::Anyhow(anyhow!(
+                "Already connecting or connected"
+            )));
         }
-        _ => {}
     }
 
     let handle = tokio::spawn(server_actor(
@@ -52,7 +46,10 @@ pub(crate) async fn connect_server(
         ServerStatus::Disconnected,
     )?;
 
-    servers.insert(server_id, ServerRuntime::Connecting { handle });
+    state.add_server(
+        server_id,
+        ServerState::new(ServerRuntime::Connecting { handle }),
+    );
     emit_server_status(&app_handle, server_id, ServerStatus::Connecting)?;
 
     Ok(())
@@ -66,13 +63,8 @@ pub(crate) fn join_channel(
 ) -> Result<(), MyCustomError> {
     info!("Tauri command: join channel invoked, server_id: {server_id}, channel: {channel}");
 
-    let servers = state.servers.lock().expect("Servers lock poisoned");
-    let server = servers.get(&server_id).context("Can't find server")?;
-
-    if let ServerRuntime::Connected { tx, .. } = server {
-        tx.send(ServerCommand::Join(channel))
-            .context("Failed to send join command")?;
-    }
+    let server = state.get_server(server_id).context("Can't find server")?;
+    server.send_command(ServerCommand::Join(channel))?;
 
     Ok(())
 }
@@ -87,20 +79,13 @@ pub(crate) fn send_message(
     info!("Tauri command: send message invoked, server_id: {server_id}, target: {target}, message: {message}");
 
     // 1. 정책 체크
-    if state.is_channel_locked(server_id, &target)? {
+    if state.is_channel_locked(server_id, &target) {
         return Err(MyCustomError::Anyhow(anyhow!("Channel is locked")));
     }
 
     // 2. 서버 runtime 접근
-    let servers = state.servers.lock().expect("Servers lock poisoned");
-    let runtime = servers.get(&server_id).context("Can't find server")?;
-
-    if let ServerRuntime::Connected { tx, .. } = runtime {
-        tx.send(ServerCommand::Privmsg { target, message })
-            .context("Failed to send privmsg")?;
-    } else {
-        return Err(MyCustomError::Anyhow(anyhow!("Server not connected")));
-    }
+    let server = state.get_server(server_id).context("Can't find server")?;
+    server.send_command(ServerCommand::Privmsg { target, message })?;
 
     Ok(())
 }
@@ -112,14 +97,11 @@ pub(crate) fn cancel_connect(
     app_handle: AppHandle,
 ) -> Result<(), MyCustomError> {
     info!("Tauri command: cancel connect invoked, server_id: {server_id}");
-    let mut servers = state.servers.lock().expect("Servers lock poisoned");
 
-    if let Some(ServerRuntime::Connecting { handle }) = servers.remove(&server_id) {
-        handle.abort();
-
-        servers.insert(server_id, ServerRuntime::Disconnected);
-
-        emit_server_status(&app_handle, server_id, ServerStatus::Failed)?;
+    if let Some(server) = state.get_server(server_id) {
+        if server.abort_connecting() {
+            emit_server_status(&app_handle, server_id, ServerStatus::Failed)?;
+        }
     }
 
     Ok(())
@@ -130,20 +112,9 @@ pub(crate) fn disconnect_server(
     server_id: ServerId,
     state: State<IRCClientState>,
 ) -> Result<(), MyCustomError> {
-    let mut servers = state.servers.lock().expect("Servers lock poisoned");
-
-    if let Some(runtime) = servers.remove(&server_id) {
-        match runtime {
-            ServerRuntime::Registering { tx, handle } | ServerRuntime::Connected { tx, handle } => {
-                let _ = tx.send(ServerCommand::Quit);
-                servers.insert(server_id, ServerRuntime::Disconnecting { handle });
-            }
-            other => {
-                servers.insert(server_id, other);
-            }
-        }
+    if let Some(server) = state.get_server(server_id) {
+        server.disconnect();
     }
-
     Ok(())
 }
 
@@ -153,18 +124,8 @@ pub(crate) fn lock_channel(
     state: State<IRCClientState>,
     app_handle: AppHandle,
 ) -> Result<(), MyCustomError> {
-    {
-        let mut channels = state
-            .channel_states
-            .lock()
-            .map_err(|_| MyCustomError::Anyhow(anyhow!("Channels lock poisoned")))?;
-        let server_entry = channels.entry(payload.server_id()).or_default();
-        let channel_state = server_entry
-            .entry(payload.channel().to_string())
-            .or_default();
-
-        channel_state.locked = true;
-    }
+    let server = state.ensure_server(payload.server_id());
+    server.set_channel_locked(payload.channel(), true);
 
     emit_channel_lock_changed(&app_handle, payload.server_id(), payload.channel(), true)?;
 
@@ -177,17 +138,8 @@ pub(crate) fn unlock_channel(
     state: State<IRCClientState>,
     app_handle: AppHandle,
 ) -> Result<(), MyCustomError> {
-    {
-        let mut channels = state
-            .channel_states
-            .lock()
-            .map_err(|_| MyCustomError::Anyhow(anyhow!("Channels lock poisoned")))?;
-
-        if let Some(server_entry) = channels.get_mut(&payload.server_id()) {
-            if let Some(channel_state) = server_entry.get_mut(payload.channel()) {
-                channel_state.locked = false;
-            }
-        }
+    if let Some(server) = state.get_server(payload.server_id()) {
+        server.set_channel_locked(payload.channel(), false);
     }
 
     emit_channel_lock_changed(&app_handle, payload.server_id(), payload.channel(), false)?;
@@ -200,16 +152,7 @@ pub fn is_channel_locked(
     payload: ChannelLockPayload,
     state: State<IRCClientState>,
 ) -> Result<bool, MyCustomError> {
-    let channels = state
-        .channel_states
-        .lock()
-        .map_err(|_| MyCustomError::Anyhow(anyhow!("Channels lock poisoned")))?;
-
-    Ok(channels
-        .get(&payload.server_id())
-        .and_then(|m| m.get(payload.channel()))
-        .map(|s| s.locked)
-        .unwrap_or(false))
+    Ok(state.is_channel_locked(payload.server_id(), payload.channel()))
 }
 
 mod payload {

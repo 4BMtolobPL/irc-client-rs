@@ -31,6 +31,23 @@
 
     let showServerModal = $state<boolean>(false);
 
+    let contextMenu = $state<{
+        visible: boolean,
+        x: number,
+        y: number,
+        serverId: string | null,
+        channelName: string | null
+    }>({
+        visible: false,
+        x: 0,
+        y: 0,
+        serverId: null,
+        channelName: null,
+    });
+    window.addEventListener("click", () => {
+        contextMenu.visible = false;
+    });
+
     onMount(async () => {
         await invoke("init_servers");
         const initialServers = await invoke<any[]>("get_servers");
@@ -115,24 +132,25 @@
                     const server = newMap.get(payload.server_id);
                     if (!server) return newMap;
 
-                    const channel = server.channels.get(payload.channel);
-                    if (!channel) return newMap;
-
-                    channel.users.delete(payload.nick);
-
-                    channel.messages = [
-                        ...channel.messages,
-                        {
-                            type: "system",
-                            id: crypto.randomUUID(),
-                            content: `${payload.nick} left the channel`,
-                            timestamp: Date.now(),
-                        }
-                    ];
-
                     // 🔥 내가 나간 경우
                     if (payload.nick === server.nickname) {
                         currentChannelName.set(null);
+                        server.channels.delete(payload.channel);
+                    } else {
+                        const channel = server.channels.get(payload.channel);
+                        if (!channel) return newMap;
+
+                        channel.users.delete(payload.nick);
+
+                        channel.messages = [
+                            ...channel.messages,
+                            {
+                                type: "system",
+                                id: crypto.randomUUID(),
+                                content: `${payload.nick} left the channel`,
+                                timestamp: Date.now(),
+                            }
+                        ];
                     }
 
                     return newMap;
@@ -330,6 +348,10 @@
 
         msgInput = "";
     }
+
+    const leaveChannel = () => {
+        invoke("leave_channel", {payload: {serverId: contextMenu.serverId, channel: contextMenu.channelName}});
+    }
 </script>
 
 <div class="w-dvw h-dvh flex bg-neutral-100 text-neutral-900 dark:bg-neutral-900 dark:text-neutral-100">
@@ -364,7 +386,16 @@
                     {#if server.id === $currentServerId}
                         <ul class="ml-4 mt-1 space-y-1 text-sm">
                             {#each server.channels as [channelName, channel] (channelName)}
-                                <li>
+                                <li oncontextmenu={(e) => {
+                                    e.preventDefault();
+                                    contextMenu = {
+                                        visible: true,
+                                        x: e.clientX,
+                                        y: e.clientY,
+                                        serverId: serverId,
+                                        channelName: channelName
+                                    }
+                                }}>
                                     <button class="w-full cursor-pointer rounded px-2 py-1 {channelName === $currentChannelName ? 'bg-neutral-300 dark:bg-neutral-600' : 'hover:bg-neutral-200 dark:hover:bg-neutral-700'}"
                                             onclick={() => selectChannel(serverId, channelName)}>
                                         <span class="flex items-center gap-1">
@@ -426,6 +457,15 @@
 {/if}
 {#if showServerModal}
     <ServerModal bind:showServerModal></ServerModal>
+{/if}
+
+{#if contextMenu.visible }
+    <div class="fixed z-50 rounded bg-neutral-800 text-white shadow"
+         style="left: {contextMenu.x}px; top: {contextMenu.y}px;">
+        <button>Join</button>
+        <button onclick={leaveChannel}>Leave</button>
+        <button>Copy Channel Name</button>
+    </div>
 {/if}
 <style>
 </style>

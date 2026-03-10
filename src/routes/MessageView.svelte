@@ -1,5 +1,5 @@
 <script lang="ts">
-    import {currentChannel, currentServerNickname} from "../stores/stores.svelte";
+    import {ircStore} from "../stores/irc.svelte";
 
     let container: HTMLDivElement;
     let autoScroll = true;
@@ -17,17 +17,17 @@
 
 
 <div bind:this={container} class="flex-1 overflow-y-auto p-3" onscroll={onScroll}>
-    {#each $currentChannel?.messages ?? [] as msg}
+    {#each ircStore.currentChannel?.messages ?? [] as msg}
         {#if msg.type === "user"}
             <div class="mb-1">
-                <span class="font-semibold">{($currentServerNickname && $currentServerNickname === msg.nickname) ? `@${msg.nickname}` : msg.nickname}</span>
+                <span class="font-semibold">{(ircStore.currentServerNickname && ircStore.currentServerNickname === msg.nickname) ? `< ${msg.nickname}>` : `<@${msg.nickname}>`}</span>
                 <span class="ml-1 whitespace-pre-wrap">{msg.content}</span>
             </div>
         {/if}
         {#if msg.type === "system"}
             <div class="mb-1">
-                <span class="font-semibold">System</span>
-                <span class="ml-1 whitespace-pre-wrap">{msg.content}</span>
+                <span class="font-semibold text-gray-500">System</span>
+                <span class="ml-1 whitespace-pre-wrap text-gray-500">{msg.content}</span>
             </div>
         {/if}
     {/each}

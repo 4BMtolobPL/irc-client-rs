@@ -1,30 +1,11 @@
 <script lang="ts">
     import {onMount} from "svelte";
-    import {listen} from "@tauri-apps/api/event";
     import {invoke} from "@tauri-apps/api/core";
     import ServerModal from "./ServerModal.svelte";
     import ChannelJoinModal from "./ChannelJoinModal.svelte";
     import MessageView from "./MessageView.svelte";
-    import {
-        addMessage,
-        addServerMessage,
-        currentChannelName,
-        currentServerId,
-        ensureChannel,
-        isLocked,
-        removeUnreadMessage,
-        servers,
-        serverUnread,
-        updateChannelLock
-    } from "../stores/stores.svelte";
-    import {SvelteMap, SvelteSet} from "svelte/reactivity";
-    import type {
-        ChannelLockChangedEvent,
-        ServerDetail,
-        ServerStatusPayload,
-        UiEventPayload
-    } from "../types/payloads.svelte";
-    import type {IrcServerStatus} from "../types/kirc.svelte.ts";
+    import {ircStore} from "../stores/irc.svelte";
+    import {ircService} from "../services/ircService";
 
     let showChannelModal = $state<boolean>(false);
     let msgInput = $state<string>("");
@@ -61,266 +42,15 @@
     });
 
     onMount(async () => {
-        await invoke("init_servers");
-        const initialServers = await invoke<any[]>("get_servers");
-        servers.update((map) => {
-            const newMap = new SvelteMap(map);
-            initialServers.forEach((s) => {
-                const channelsMap = new SvelteMap();
-                s.channels.forEach((ch: any) => {
-                    channelsMap.set(ch.name, {
-                        name: ch.name,
-                        messages: [],
-                        users: new SvelteSet(),
-                        unread: 0,
-                        locked: ch.locked,
-                    });
-                });
-
-                newMap.set(s.id, {
-                    ...s,
-                    channels: channelsMap,
-                    serverMessages: [],
-                });
-            });
-            return newMap;
-        });
+        await ircService.initialize();
     });
-
-    listen<UiEventPayload>("kirc:event", (event) => {
-        const payload: UiEventPayload = event.payload;
-        console.log("kirc:event", payload);
-
-        switch (payload.type) {
-            case "UserMessage": {
-                ensureChannel(payload.server_id, payload.channel);
-                addMessage(payload.server_id, payload.channel, {
-                    type: "user",
-                    id: crypto.randomUUID(),
-                    nickname: payload.nick,
-                    content: payload.content,
-                    timestamp: payload.timestamp,
-                });
-
-                break;
-            }
-            case "Join": {
-                ensureChannel(payload.server_id, payload.channel);
-
-                servers.update((map) => {
-                    const newMap = new SvelteMap(map);
-                    const server = newMap.get(payload.server_id);
-                    if (!server) return newMap;
-
-                    const channel = server.channels.get(payload.channel);
-                    if (!channel) return newMap;
-
-                    channel.users.add(payload.nick);
-
-                    channel.messages = [
-                        ...channel.messages,
-                        {
-                            type: "system",
-                            id: crypto.randomUUID(),
-                            content: `${payload.nick} joined the channel`,
-                            timestamp: Date.now(),
-                        }
-                    ];
-
-                    // 🔥 내가 JOIN 했을 경우
-                    if (payload.nick === server.nickname) {
-                        currentServerId.set(payload.server_id);
-                        currentChannelName.set(payload.channel);
-                    }
-
-                    return newMap;
-                });
-
-                break;
-            }
-            case "Part": {
-                servers.update((map) => {
-                    const newMap = new SvelteMap(map);
-                    const server = newMap.get(payload.server_id);
-                    if (!server) return newMap;
-
-                    if (payload.nick === server.nickname) {
-                        currentChannelName.set(null);
-                        server.channels.delete(payload.channel);
-                    } else {
-                        const channel = server.channels.get(payload.channel);
-                        if (!channel) return newMap;
-
-                        channel.users.delete(payload.nick);
-
-                        channel.messages = [
-                            ...channel.messages,
-                            {
-                                type: "system",
-                                id: crypto.randomUUID(),
-                                content: `${payload.nick} left the channel`,
-                                timestamp: Date.now(),
-                            }
-                        ];
-                    }
-
-                    return newMap;
-                });
-
-                break;
-            }
-            case "Quit": {
-                servers.update((map) => {
-                    const newMap = new SvelteMap(map);
-                    const server = newMap.get(payload.server_id);
-                    if (!server) return newMap;
-
-                    // 🔥 모든 채널 순회
-                    for (const channel of server.channels.values()) {
-                        if (channel.users.has(payload.nick)) {
-                            channel.users.delete(payload.nick);
-
-                            channel.messages = [
-                                ...channel.messages,
-                                {
-                                    type: "system",
-                                    id: crypto.randomUUID(),
-                                    content: `${payload.nick} quit${payload.reason ? ` (${payload.reason})` : ""}`,
-                                    timestamp: Date.now(),
-                                }
-                            ];
-                        }
-                    }
-
-                    return newMap;
-                });
-
-
-                break;
-            }
-            case "Nick": {
-                servers.update((map) => {
-                    const newMap = new SvelteMap(map);
-                    const server = newMap.get(payload.server_id);
-                    if (!server) return newMap;
-
-                    // 🔥 내가 닉네임 변경한 경우
-                    if (server.nickname === payload.old_nick) {
-                        server.nickname = payload.new_nick;
-                    }
-
-                    for (const channel of server.channels.values()) {
-                        if (channel.users.has(payload.old_nick)) {
-                            channel.users.delete(payload.old_nick);
-                            channel.users.add(payload.new_nick);
-
-                            channel.messages = [
-                                ...channel.messages,
-                                {
-                                    type: "system",
-                                    id: crypto.randomUUID(),
-                                    content: `${payload.old_nick} is now known as ${payload.new_nick}`,
-                                    timestamp: Date.now(),
-                                }
-                            ];
-                        }
-                    }
-
-                    return newMap;
-                });
-
-                break;
-            }
-            case "Topic": {
-                ensureChannel(payload.server_id, payload.channel);
-
-                servers.update((map) => {
-                    const newMap = new SvelteMap(map);
-
-                    const server = newMap.get(payload.server_id);
-                    if (!server) return newMap;
-
-                    const channel = server.channels.get(payload.channel);
-                    if (!channel) return newMap;
-
-                    channel.topic = payload.topic;
-
-                    channel.messages = [
-                        ...channel.messages,
-                        {
-                            type: "system",
-                            id: crypto.randomUUID(),
-                            content: `Topic set to: ${payload.topic}`,
-                            timestamp: Date.now(),
-                        }
-                    ];
-
-                    return newMap;
-                });
-
-                break;
-            }
-            case "Error": {
-                addServerMessage(payload.server_id, {
-                    type: "system",
-                    id: crypto.randomUUID(),
-                    content: `Error: ${payload.message}`,
-                    timestamp: Date.now(),
-                });
-                break;
-            }
-        }
-    });
-
-    listen<ChannelLockChangedEvent>("kirc:channel_lock_changed", (event) => {
-        const payload = event.payload;
-        updateChannelLock(payload.serverId, payload.channel, payload.locked)
-    });
-
-    listen<ServerDetail>("kirc:server_added", (e) => {
-        const payload = e.payload;
-        console.log("kirc:server_added", payload);
-
-        servers.update((map) => {
-            const newMap = new SvelteMap(map);
-            if (newMap.has(payload.serverId)) return newMap;
-
-            newMap.set(payload.serverId, {
-                id: payload.serverId,
-                name: payload.host,
-                host: payload.host,
-                port: payload.port,
-                tls: payload.tls,
-                nickname: payload.nickname,
-                status: payload.status.toLowerCase() as IrcServerStatus,
-
-                channels: new SvelteMap(),
-                serverMessages: [],
-            });
-
-            return newMap;
-        });
-    });
-
-    listen<ServerStatusPayload>("kirc:server_status", (e) => {
-        const serverStatusPayload = e.payload;
-
-        console.log("kirc:server_status", serverStatusPayload);
-
-        servers.update((map) => {
-            const newMap = new SvelteMap(map);
-            const server = newMap.get(serverStatusPayload.serverId);
-            if (!server) return newMap;
-
-            server.status = serverStatusPayload.status.toLowerCase() as IrcServerStatus; // TODO: Fix it
-            return newMap;
-        });
-    })
 
     const sendMessage = async (): Promise<void> => {
+        if (!ircStore.currentServerId || !ircStore.currentChannelName) return;
+
         await invoke("send_message", {
-            serverId: $currentServerId,
-            target: $currentChannelName,
+            serverId: ircStore.currentServerId,
+            target: ircStore.currentChannelName,
             message: msgInput
         });
 
@@ -328,13 +58,12 @@
     }
 
     const selectServer = (serverId: string) => {
-        currentServerId.set(serverId);
-        currentChannelName.set(null);
+        ircService.setCurrentServer(serverId);
+        ircService.setCurrentChannel(null);
     }
 
     const selectChannel = (serverId: string, channelName: string) => {
-        removeUnreadMessage(serverId, channelName);
-        currentChannelName.set(channelName)
+        ircService.setCurrentChannel(channelName);
     }
 
     const openChannelModal = () => {
@@ -346,10 +75,10 @@
     }
 
     const toggleLock = () => {
-        const serverId = $currentServerId;
-        const channel = $currentChannelName;
+        const serverId = ircStore.currentServerId;
+        const channel = ircStore.currentChannelName;
 
-        if ($isLocked) {
+        if (ircStore.isLocked) {
             invoke("unlock_channel", {payload: {serverId, channel}});
         } else {
             invoke("lock_channel", {payload: {serverId, channel}});
@@ -377,21 +106,22 @@
     <aside class="w-56 shrink-0 border-r border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900">
         <div class="p-2 text-sm font-semibold">Servers</div>
         <ul class="space-y-1 px-2">
-            {#each $servers as [serverId, server] (serverId)}
-                {@const isSelected = serverId === $currentServerId}
-                {@const unread = $serverUnread.get(server.id) ?? 0}
-                <li oncontextmenu={(e) => {
-                    e.preventDefault();
-                    serverContextMenu = {
-                        visible: true,
-                        x: e.clientX,
-                        y: e.clientY,
-                        serverId: serverId,
-                    };
-                }}>
+            {#each ircStore.servers as [serverId, server] (serverId)}
+                {@const isSelected = serverId === ircStore.currentServerId}
+                {@const unread = ircStore.serverUnread.get(server.id) ?? 0}
+                <li>
                     <!-- Server Row -->
                     <button class="w-full flex items-center justify-between rounded px-3 py-2 {isSelected ? 'bg-neutral-200 dark:bg-neutral-700' : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'}"
-                            onclick={() => selectServer(serverId)}>
+                            onclick={() => selectServer(serverId)}
+                            oncontextmenu={(e) => {
+                                e.preventDefault();
+                                serverContextMenu = {
+                                    visible: true,
+                                    x: e.clientX,
+                                    y: e.clientY,
+                                    serverId: serverId,
+                                };
+                    }}>
                         <!-- Left -->
                         <span class="truncate">{server.name}</span>
 
@@ -409,7 +139,7 @@
                     </button>
 
                     <!-- Channel List -->
-                    {#if server.id === $currentServerId}
+                    {#if server.id === ircStore.currentServerId}
                         <ul class="ml-4 mt-1 space-y-1 text-sm">
                             {#each server.channels as [channelName, channel] (channelName)}
                                 <li oncontextmenu={(e) => {
@@ -422,7 +152,7 @@
                                         channelName: channelName
                                     };
                                 }}>
-                                    <button class="w-full cursor-pointer rounded px-2 py-1 {channelName === $currentChannelName ? 'bg-neutral-300 dark:bg-neutral-600' : 'hover:bg-neutral-200 dark:hover:bg-neutral-700'}"
+                                    <button class="w-full cursor-pointer rounded px-2 py-1 {channelName === ircStore.currentChannelName ? 'bg-neutral-300 dark:bg-neutral-600' : 'hover:bg-neutral-200 dark:hover:bg-neutral-700'}"
                                             onclick={() => selectChannel(serverId, channelName)}>
                                         <span class="flex items-center gap-1">
                                             {channelName}
@@ -465,13 +195,14 @@
         <section class="border-t border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-3">
             <form class="flex gap-2" onsubmit={sendMessage}>
                 <button class="text-sm px-2 py-1 rounded hover:bg-neutral-200 dark:hover:bg-neutral-700"
-                        onclick={toggleLock} type="button">{$isLocked ? "🔒" : "🔓"}</button>
+                        onclick={toggleLock} type="button">{ircStore.isLocked ? "🔒" : "🔓"}</button>
                 <input bind:value={msgInput}
                        class="flex-1 rounded px-3 py-2 text-sm bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 focus:outline-none focus:ring-1 focus:ring-sky-500"
-                       disabled={$isLocked} placeholder={$isLocked ? "Channel is locked" : "Type a message"}
+                       disabled={ircStore.isLocked}
+                       placeholder={ircStore.isLocked ? "Channel is locked" : "Type a message"}
                        type="text"/>
                 <button class="rounded px-4 py-2 text-sm bg-sky-600 text-white hover:bg-sky-500 active:bg-sky-700 disabled:opacity-40"
-                        disabled={$isLocked} type="submit">Send
+                        disabled={ircStore.isLocked} type="submit">Send
                 </button>
             </form>
         </section>

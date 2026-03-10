@@ -1,6 +1,6 @@
 <script lang="ts">
     import {invoke} from "@tauri-apps/api/core";
-    import {currentServerId} from "../stores/stores.svelte";
+    import {ircStore} from "../stores/irc.svelte";
 
     interface Props {
         showChannelModal: boolean;
@@ -31,7 +31,7 @@
     function submit() {
         if (!validate()) return;
 
-        const serverId = $currentServerId;
+        const serverId = ircStore.currentServerId;
         if (!serverId) return;
 
         invoke("join_channel", {serverId: serverId, channel: form.name});

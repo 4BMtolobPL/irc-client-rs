@@ -31,7 +31,7 @@
 
     let showServerModal = $state<boolean>(false);
 
-    let contextMenu = $state<{
+    let channelContextMenu = $state<{
         visible: boolean,
         x: number,
         y: number,
@@ -44,8 +44,20 @@
         serverId: null,
         channelName: null,
     });
+    let serverContextMenu = $state<{
+        visible: boolean,
+        x: number,
+        y: number,
+        serverId: string | null
+    }>({
+        visible: false,
+        x: 0,
+        y: 0,
+        serverId: null,
+    });
     window.addEventListener("click", () => {
-        contextMenu.visible = false;
+        channelContextMenu.visible = false;
+        serverContextMenu.visible = false;
     });
 
     onMount(async () => {
@@ -132,7 +144,6 @@
                     const server = newMap.get(payload.server_id);
                     if (!server) return newMap;
 
-                    // 🔥 내가 나간 경우
                     if (payload.nick === server.nickname) {
                         currentChannelName.set(null);
                         server.channels.delete(payload.channel);
@@ -159,7 +170,6 @@
                 break;
             }
             case "Quit": {
-
                 servers.update((map) => {
                     const newMap = new SvelteMap(map);
                     const server = newMap.get(payload.server_id);
@@ -189,7 +199,6 @@
                 break;
             }
             case "Nick": {
-
                 servers.update((map) => {
                     const newMap = new SvelteMap(map);
                     const server = newMap.get(payload.server_id);
@@ -350,7 +359,16 @@
     }
 
     const leaveChannel = () => {
-        invoke("leave_channel", {payload: {serverId: contextMenu.serverId, channel: contextMenu.channelName}});
+        invoke("leave_channel", {
+            payload: {
+                serverId: channelContextMenu.serverId,
+                channel: channelContextMenu.channelName
+            }
+        });
+    }
+
+    const disconnectServer = () => {
+        invoke("disconnect_server", {serverId: serverContextMenu.serverId});
     }
 </script>
 
@@ -362,7 +380,15 @@
             {#each $servers as [serverId, server] (serverId)}
                 {@const isSelected = serverId === $currentServerId}
                 {@const unread = $serverUnread.get(server.id) ?? 0}
-                <li>
+                <li oncontextmenu={(e) => {
+                    e.preventDefault();
+                    serverContextMenu = {
+                        visible: true,
+                        x: e.clientX,
+                        y: e.clientY,
+                        serverId: serverId,
+                    };
+                }}>
                     <!-- Server Row -->
                     <button class="w-full flex items-center justify-between rounded px-3 py-2 {isSelected ? 'bg-neutral-200 dark:bg-neutral-700' : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'}"
                             onclick={() => selectServer(serverId)}>
@@ -388,13 +414,13 @@
                             {#each server.channels as [channelName, channel] (channelName)}
                                 <li oncontextmenu={(e) => {
                                     e.preventDefault();
-                                    contextMenu = {
+                                    channelContextMenu = {
                                         visible: true,
                                         x: e.clientX,
                                         y: e.clientY,
                                         serverId: serverId,
                                         channelName: channelName
-                                    }
+                                    };
                                 }}>
                                     <button class="w-full cursor-pointer rounded px-2 py-1 {channelName === $currentChannelName ? 'bg-neutral-300 dark:bg-neutral-600' : 'hover:bg-neutral-200 dark:hover:bg-neutral-700'}"
                                             onclick={() => selectChannel(serverId, channelName)}>
@@ -459,12 +485,20 @@
     <ServerModal bind:showServerModal></ServerModal>
 {/if}
 
-{#if contextMenu.visible }
+{#if channelContextMenu.visible }
     <div class="fixed z-50 rounded bg-neutral-800 text-white shadow"
-         style="left: {contextMenu.x}px; top: {contextMenu.y}px;">
+         style="left: {channelContextMenu.x}px; top: {channelContextMenu.y}px;">
         <button>Join</button>
         <button onclick={leaveChannel}>Leave</button>
         <button>Copy Channel Name</button>
+    </div>
+{/if}
+{#if serverContextMenu.visible }
+    <div class="fixed z-50 rounded bg-neutral-800 text-white shadow"
+         style="left: {channelContextMenu.x}px; top: {channelContextMenu.y}px;">
+        <button>Connect</button>
+        <button onclick={disconnectServer}>Disconnect</button>
+        <button>Copy Server Name</button>
     </div>
 {/if}
 <style>

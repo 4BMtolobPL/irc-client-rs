@@ -4,6 +4,7 @@ use crate::kirc::emits::payload::{
 };
 use crate::kirc::types::{ServerId, ServerStatus};
 use tauri::{AppHandle, Emitter};
+use tauri_plugin_log::log::trace;
 
 pub(super) fn emit_server_added(
     app_handle: &AppHandle,
@@ -14,6 +15,8 @@ pub(super) fn emit_server_added(
     nickname: &str,
     status: ServerStatus,
 ) -> anyhow::Result<()> {
+    trace!("Emit emit_server_added");
+
     app_handle.emit(
         "kirc:server_added",
         ServerDetail::new(
@@ -34,6 +37,8 @@ pub(super) fn emit_server_status(
     server_id: ServerId,
     status: ServerStatus,
 ) -> anyhow::Result<()> {
+    trace!("Emit emit_server_status");
+
     app_handle.emit(
         "kirc:server_status",
         ServerStatusPayload::new(server_id, status),
@@ -48,6 +53,8 @@ pub(super) fn emit_channel_lock_changed(
     channel: &str,
     locked: bool,
 ) -> anyhow::Result<()> {
+    trace!("Emit emit_channel_lock_changed");
+
     app_handle.emit(
         "kirc:channel_lock_changed",
         ChannelLockChangedEvent::new(server_id, channel.to_string(), locked),
@@ -57,6 +64,8 @@ pub(super) fn emit_channel_lock_changed(
 }
 
 pub(super) fn emit_ui_event(app_handle: &AppHandle) -> UIEventBuilder {
+    trace!("Emit emit_ui_event");
+
     UIEventBuilder::new(app_handle.clone())
 }
 
@@ -179,6 +188,8 @@ pub(super) fn emit_system_message(
     server_id: ServerId,
     message: &str,
 ) -> anyhow::Result<()> {
+    trace!("Emit system_message");
+
     app_handle.emit(
         "kirc:system_message",
         SystemMessagePayload::new(server_id, message),

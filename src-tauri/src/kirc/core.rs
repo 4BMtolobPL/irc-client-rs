@@ -1,11 +1,12 @@
 use crate::kirc::emits::{emit_server_status, emit_system_message, emit_ui_event};
-use crate::kirc::state::IRCClientState;
+use crate::kirc::state::kirc::KircState;
 use crate::kirc::types::server::ServerConfig;
 use crate::kirc::types::{ServerCommand, ServerId, ServerStatus};
 use futures::prelude::*;
 use irc::client::prelude::*;
+use std::sync::Arc;
 use tauri::{AppHandle, Manager};
-use tauri_plugin_log::log::{error, trace};
+use tauri_plugin_log::log::{debug, error, trace};
 
 pub(super) async fn server_actor(
     server_id: ServerId,
@@ -13,6 +14,7 @@ pub(super) async fn server_actor(
     app_handle: AppHandle,
 ) {
     // actor에선 error를 ?로 전파하지 않고, 소비/로깅만 하거나 이벤트로 전파
+    debug!("Starting server actor: {}", server_id);
 
     let config = Config {
         server: Some(server_config.server().to_string()),
@@ -46,7 +48,7 @@ pub(super) async fn server_actor(
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
     {
-        let state = app_handle.state::<IRCClientState>();
+        let state = app_handle.state::<Arc<KircState>>();
         if let Some(server) = state.get_server(server_id) {
             server.transition_to_registering(tx.clone());
         }
@@ -54,11 +56,13 @@ pub(super) async fn server_actor(
 
     let _ = emit_server_status(&app_handle, server_id, ServerStatus::Registering);
 
+    trace!("Start server({server_id}) actor loop");
     loop {
         tokio::select! {
             Some(result) = stream.next() => {
                 match result {
                     Ok(message) => {
+                        trace!("Stream get: {message}");
                         let _ = handle_message(server_id, message, &app_handle);
                     }
                     Err(_) => break,
@@ -99,7 +103,7 @@ pub(super) async fn server_actor(
     }
 
     {
-        let state = app_handle.state::<IRCClientState>();
+        let state = app_handle.state::<Arc<KircState>>();
         if let Some(server) = state.get_server(server_id) {
             server.transition_to_disconnected();
         }
@@ -108,7 +112,7 @@ pub(super) async fn server_actor(
 }
 
 fn fail_state(server_id: ServerId, app_handle: AppHandle, message: String) {
-    let state = app_handle.state::<IRCClientState>();
+    let state = app_handle.state::<Arc<KircState>>();
 
     if let Some(server) = state.get_server(server_id) {
         server.transition_to_failed(message);
@@ -131,7 +135,7 @@ fn handle_message(
                 .user_message(server_id, target, source_nickname, content)
                 .emit()?;
         }
-        Command::JOIN(chanlist, _chankey, _real_name) => {
+        Command::JOIN(chanlist, chankey, real_name) => {
             emit_ui_event(app_handle)
                 .join(server_id, chanlist, source_nickname)
                 .emit()?;
@@ -162,9 +166,14 @@ fn handle_message(
         Command::Response(Response::RPL_WELCOME, _) => {
             trace!("handle_message RPL_WELCOME");
             {
-                let state = app_handle.state::<IRCClientState>();
+                let state = app_handle.state::<Arc<KircState>>();
                 if let Some(server) = state.get_server(server_id) {
                     server.transition_to_connected();
+
+                    // 기존 채널이 존재하면 연결
+                    for (channel_name, channel_state) in server.channels() {
+                        server.send_command(ServerCommand::Join(channel_name))?;
+                    }
                 }
             }
 

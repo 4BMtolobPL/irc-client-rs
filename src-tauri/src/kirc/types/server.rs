@@ -1,5 +1,7 @@
-#[derive(Clone)]
-pub(in crate::kirc) struct ServerConfig {
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Serialize, Deserialize)]
+pub(crate) struct ServerConfig {
     server: String,
     port: u16,
     use_tls: bool,

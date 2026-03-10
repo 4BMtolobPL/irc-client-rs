@@ -59,54 +59,6 @@
             showServerModal = false;
         }
     }
-
-    listen<ServerDetail>("kirc:server_added", (e) => {
-        const payload = e.payload;
-        console.log("kirc:server_added", payload);
-
-        servers.update((map) => {
-            const newMap = new SvelteMap(map);
-            if (newMap.has(payload.serverId)) return newMap;
-
-            newMap.set(payload.serverId, {
-                id: payload.serverId,
-                name: payload.host,
-                host: payload.host,
-                port: payload.port,
-                tls: payload.tls,
-                nickname: payload.nickname,
-                status: payload.status.toLowerCase() as IrcServerStatus,
-
-                channels: new SvelteMap(),
-                serverMessages: [],
-            });
-
-            return newMap;
-        });
-    });
-
-    listen<ServerStatusPayload>("kirc:server_status", (e) => {
-        const serverStatusPayload = e.payload;
-
-        console.log("kirc:server_status", serverStatusPayload);
-
-        servers.update((map) => {
-            const newMap = new SvelteMap(map);
-            const server = newMap.get(serverStatusPayload.serverId);
-            if (!server) return newMap;
-
-            server.status = serverStatusPayload.status.toLowerCase() as IrcServerStatus; // TODO: Fix it
-            return newMap;
-        });
-
-        if (serverStatusPayload.status === ServerStatus.Connected) {
-            connecting = false;
-            showServerModal = false;
-        } else if (serverStatusPayload.status === ServerStatus.Failed) {
-            connecting = false;
-            // TODO: 서버 연결 실패
-        }
-    })
 </script>
 
 <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/30">

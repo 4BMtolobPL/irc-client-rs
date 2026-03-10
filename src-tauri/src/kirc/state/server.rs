@@ -1,5 +1,8 @@
+use crate::kirc::persistence::ServerStateSnapshot;
+use crate::kirc::state::channel::ChannelState;
 use crate::kirc::types::server::ServerConfig;
 use crate::kirc::types::{ChannelId, ServerCommand, ServerStatus};
+use crate::memento::Originator;
 use anyhow::anyhow;
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -43,7 +46,7 @@ impl ServerRuntime {
         }
     }
 
-    pub(super) async fn graceful_shutdown(self) {
+    pub(in crate::kirc) async fn graceful_shutdown(self) {
         const TIMEOUT: Duration = Duration::from_secs(5);
 
         match self {
@@ -71,11 +74,6 @@ impl ServerRuntime {
     }
 }
 
-#[derive(Default)]
-pub(in crate::kirc) struct ChannelState {
-    pub(in crate::kirc) locked: bool,
-}
-
 pub(in crate::kirc) struct ServerState {
     runtime: Mutex<ServerRuntime>,
     config: Mutex<ServerConfig>,
@@ -91,12 +89,37 @@ impl ServerState {
         }
     }
 
+    pub(in crate::kirc) fn with_channel(
+        config: ServerConfig,
+        channels: HashMap<ChannelId, ChannelState>,
+    ) -> Self {
+        Self {
+            runtime: Mutex::new(ServerRuntime::Disconnected),
+            config: Mutex::new(config),
+            channels: Mutex::new(channels),
+        }
+    }
+
     pub(in crate::kirc) fn status(&self) -> ServerStatus {
         self.runtime.lock().unwrap().status()
     }
 
     pub(in crate::kirc) fn config(&self) -> ServerConfig {
         self.config.lock().unwrap().clone()
+    }
+
+    pub(in crate::kirc) fn channels(&self) -> HashMap<ChannelId, ChannelState> {
+        self.channels.lock().unwrap().clone()
+    }
+
+    pub(in crate::kirc) fn insert_channel(&self, channel_name: &str, locked: bool) {
+        self.channels.lock().unwrap().insert(
+            channel_name.to_string(),
+            ChannelState {
+                name: channel_name.to_string(),
+                locked,
+            },
+        );
     }
 
     pub(in crate::kirc) fn is_active(&self) -> bool {
@@ -118,12 +141,9 @@ impl ServerState {
     }
 
     pub(in crate::kirc) fn set_channel_locked(&self, channel: &str, locked: bool) {
-        self.channels
-            .lock()
-            .unwrap()
-            .entry(channel.to_string())
-            .or_default()
-            .locked = locked;
+        if let Some(channel) = self.channels.lock().unwrap().get_mut(channel) {
+            channel.locked = locked;
+        }
     }
 
     pub(in crate::kirc) fn send_command(&self, cmd: ServerCommand) -> anyhow::Result<()> {
@@ -136,7 +156,7 @@ impl ServerState {
         }
     }
 
-    pub(super) fn transition_to_connecting(&self, handle: JoinHandle<()>) {
+    pub(in crate::kirc) fn transition_to_connecting(&self, handle: JoinHandle<()>) {
         let mut guard = self.runtime.lock().unwrap();
         if let ServerRuntime::Disconnected | ServerRuntime::Failed { .. } =
             std::mem::take(&mut *guard)
@@ -193,5 +213,11 @@ impl ServerState {
 
     pub(in crate::kirc) fn take_runtime(&self) -> ServerRuntime {
         std::mem::take(&mut *self.runtime.lock().unwrap())
+    }
+}
+
+impl Originator<ServerStateSnapshot> for ServerState {
+    fn snapshot(&self) -> ServerStateSnapshot {
+        ServerStateSnapshot::new(self.config(), self.channels())
     }
 }

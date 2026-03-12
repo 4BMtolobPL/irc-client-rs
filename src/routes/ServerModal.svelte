@@ -1,10 +1,5 @@
 <script lang="ts">
     import {invoke} from "@tauri-apps/api/core";
-    import {listen} from "@tauri-apps/api/event";
-    import type {IrcServerStatus} from "../types/kirc.svelte";
-    import {SvelteMap} from "svelte/reactivity";
-    import {servers} from "../stores/stores.svelte";
-    import {type ServerDetail, ServerStatus, type ServerStatusPayload} from "../types/payloads.svelte";
 
     interface Props {
         showServerModal: boolean;
@@ -50,6 +45,7 @@
         };
 
         await invoke("connect_server", {payload: payload});
+        showServerModal = false;
     }
 
     const cancel = () => {

@@ -64,8 +64,6 @@ pub(super) fn emit_channel_lock_changed(
 }
 
 pub(super) fn emit_ui_event(app_handle: &AppHandle) -> UIEventBuilder {
-    trace!("Emit emit_ui_event");
-
     UIEventBuilder::new(app_handle.clone())
 }
 
@@ -83,12 +81,14 @@ impl UIEventBuilder {
     }
 
     pub(super) fn emit(self) -> anyhow::Result<()> {
-        if self.payload.is_none() {
+        if let Some(payload) = self.payload {
+            trace!("Emit emit_ui_event: {:?}", payload);
+
+            self.app_handle.emit("kirc:event", payload)?;
+            Ok(())
+        } else {
             anyhow::bail!("Event payload is missing");
         }
-
-        self.app_handle.emit("kirc:event", self.payload.unwrap())?;
-        Ok(())
     }
 
     pub(super) fn user_message(

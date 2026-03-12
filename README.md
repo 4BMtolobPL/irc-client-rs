@@ -30,10 +30,10 @@ Tauri + SvelteKit + Rust로 만든 데스크톱 IRC 클라이언트입니다.
 ```
 ┌──────────────────────────────────────────────────────┐
 │  Frontend (SvelteKit / Svelte 5 Runes)               │
-│  ┌─────────────┐  ┌──────────────┐  ┌────────────┐  │
-│  │  IrcStore   │  │  IrcService  │  │ Components │  │
-│  │ (SvelteMap) │←─│ (이벤트 처리) │←─│  (UI)      │  │
-│  └─────────────┘  └──────────────┘  └────────────┘  │
+│  ┌─────────────┐  ┌──────────────┐  ┌────────────┐   │
+│  │  IrcStore   │  │  IrcService  │  │ Components │   │
+│  │ (SvelteMap) │←─│ (이벤트 처리)  │←─│  (UI)      │   │
+│  └─────────────┘  └──────────────┘  └────────────┘   │
 │            ↑ Tauri Events (listen)                   │
 │            ↓ Tauri Commands (invoke)                 │
 ├──────────────────────────────────────────────────────┤
@@ -41,9 +41,9 @@ Tauri + SvelteKit + Rust로 만든 데스크톱 IRC 클라이언트입니다.
 │  ┌──────────────┐   ┌─────────────┐                  │
 │  │ KircManager  │──→│ server_actor│ (Tokio task)     │
 │  └──────────────┘   └──────┬──────┘                  │
-│  ┌──────────────┐          │ irc crate stream         │
-│  │  KircState   │          ↓                          │
-│  │  (Mutex)     │   IRC Server (TCP/TLS)              │
+│  ┌──────────────┐          │ irc crate stream        │
+│  │  KircState   │          ↓                         │
+│  │  (Mutex)     │   IRC Server (TCP/TLS)             │
 │  └──────────────┘                                    │
 └──────────────────────────────────────────────────────┘
 ```

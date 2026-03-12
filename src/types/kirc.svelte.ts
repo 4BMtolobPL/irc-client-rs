@@ -1,4 +1,4 @@
-import type { SvelteMap, SvelteSet } from "svelte/reactivity";
+import type { SvelteSet } from "svelte/reactivity";
 
 export type ServerId = string;
 export type ChannelId = string;
@@ -24,6 +24,7 @@ export type ChatMessage =
     };
 
 export type Channel = {
+  serverId: ServerId;
   name: string;
   topic?: string;
   users: SvelteSet<string>;
@@ -39,8 +40,6 @@ export type Server = {
   tls: boolean;
   nickname: string;
   status: IrcServerStatus;
-
-  channels: SvelteMap<ChannelId, Channel>;
   serverMessages: ChatMessage[];
 };
 

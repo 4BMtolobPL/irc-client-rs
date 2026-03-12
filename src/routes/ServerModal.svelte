@@ -45,6 +45,7 @@
         };
 
         await invoke("connect_server", {payload: payload});
+        showServerModal = false;
     }
 
     const cancel = () => {

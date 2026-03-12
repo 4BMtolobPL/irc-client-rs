@@ -6,7 +6,7 @@
     import MessageView from "./MessageView.svelte";
     import {ircStore} from "../stores/irc.svelte";
     import {ircService} from "../services/ircService";
-    import type {ServerId} from "../types/kirc.svelte.ts";
+    import type {ChannelId, ServerId} from "../types/kirc.svelte.ts";
 
     let showChannelModal = $state<boolean>(false);
     let msgInput = $state<string>("");
@@ -65,7 +65,7 @@
         ircService.setCurrentChannel(null);
     }
 
-    const selectChannel = (serverId: ServerId, channelId: string) => {
+    const selectChannel = (channelId: ChannelId) => {
         ircService.setCurrentChannel(channelId);
     }
 
@@ -111,7 +111,7 @@
         <ul class="space-y-1 px-2">
             {#each ircStore.servers as [serverId, server] (serverId)}
                 {@const isSelected = serverId === ircStore.currentServerId}
-                {@const unread = ircStore.serverUnread.get(server.id) ?? 0}
+                {@const unread = ircStore.serverUnread.get(serverId) ?? 0}
                 <li>
                     <!-- Server Row -->
                     <button class="w-full flex items-center justify-between rounded px-3 py-2 {isSelected ? 'bg-neutral-200 dark:bg-neutral-700' : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'}"
@@ -142,9 +142,9 @@
                     </button>
 
                     <!-- Channel List -->
-                    {#if server.id === ircStore.currentServerId}
+                    {#if serverId === ircStore.currentServerId}
                         <ul class="ml-4 mt-1 space-y-1 text-sm">
-                            {#each server.channels as [channelId, channel] (channelId)}
+                            {#each ircStore.channels.entries().filter(([_channelId, channel]) => channel.serverId === serverId) as [channelId, channel] (channelId)}
                                 <li oncontextmenu={(e) => {
                                     e.preventDefault();
                                     channelContextMenu = {
@@ -157,7 +157,7 @@
                                     };
                                 }}>
                                     <button class="w-full cursor-pointer rounded px-2 py-1 {channelId === ircStore.currentChannelId ? 'bg-neutral-300 dark:bg-neutral-600' : 'hover:bg-neutral-200 dark:hover:bg-neutral-700'}"
-                                            onclick={() => selectChannel(serverId, channelId)}>
+                                            onclick={() => selectChannel(channelId)}>
                                         <span class="flex items-center gap-1">
                                             {channel.name}
                                             {#if channel.unread > 0}

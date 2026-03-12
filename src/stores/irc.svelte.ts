@@ -1,8 +1,9 @@
 import { SvelteMap } from "svelte/reactivity";
-import type { ChannelId, ChatMessage, Server, ServerId } from "../types/kirc.svelte";
+import type { Channel, ChannelId, ChatMessage, Server, ServerId } from "../types/kirc.svelte";
 
 export class IrcStore {
   servers = $state(new SvelteMap<ServerId, Server>());
+  channels = $state(new SvelteMap<ChannelId, Channel>());
   messages = $state(new SvelteMap<ChannelId, ChatMessage[]>());
   currentServerId = $state<ServerId | null>(null);
   currentChannelId = $state<ChannelId | null>(null);
@@ -13,12 +14,12 @@ export class IrcStore {
   });
 
   currentChannel = $derived.by(() => {
-    if (!this.currentServerId || !this.currentChannelId) return null;
-    return this.servers.get(this.currentServerId)?.channels.get(this.currentChannelId) ?? null;
+    if (!this.currentChannelId) return null;
+    return this.channels.get(this.currentChannelId) ?? null;
   });
 
   currentMessage = $derived.by(() => {
-    if (!this.currentServerId || !this.currentChannelId) return null;
+    if (!this.currentChannelId) return null;
     return this.messages.get(this.currentChannelId) ?? null;
   });
 
@@ -32,12 +33,13 @@ export class IrcStore {
 
   serverUnread = $derived.by(() => {
     const result = new Map<string, number>();
-    for (const [serverId, server] of this.servers) {
-      let total = 0;
-      for (const channel of server.channels.values()) {
-        total += channel.unread;
-      }
-      result.set(serverId, total);
+    for (const serverId of this.servers.keys()) {
+      result.set(serverId, 0);
+    }
+
+    for (const channel of this.channels.values()) {
+      const current = result.get(channel.serverId) ?? 0;
+      result.set(channel.serverId, current + channel.unread);
     }
     return result;
   });

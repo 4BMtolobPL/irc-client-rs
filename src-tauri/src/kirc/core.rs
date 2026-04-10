@@ -22,6 +22,10 @@ pub(super) async fn server_actor(
         port: Some(server_config.port()),
         use_tls: Some(server_config.use_tls()),
         nickname: Some(server_config.nickname().to_string()),
+        alt_nicks: vec![
+            format!("{}_", server_config.nickname()),
+            format!("{}__", server_config.nickname()),
+        ],
         ..Config::default()
     };
 

@@ -20,7 +20,7 @@
     });
 </script>
 
-<dialog bind:this={dialog} class="m-auto rounded-md" onclose={() => showModal = false} onclick={(e) => {if (e.target === dialog) dialog.close();}}>
+<dialog bind:this={dialog} class="m-auto rounded-md" onclose={() => showModal = false}>
     <div class="w-80 rounded bg-white dark:bg-neutral-800 p-4 shadow-lg">
         {@render header?.()}
         {@render children?.()}

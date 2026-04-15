@@ -1,5 +1,5 @@
 [package]
-name = "kirc"
+name = "kirc-rs"
 version = "0.1.0"
 description = "IRC client built with Tauri"
 authors = ["you"]

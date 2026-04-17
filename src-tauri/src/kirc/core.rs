@@ -1,3 +1,4 @@
+use crate::kirc::ctcp::{parse_ctcp, CtcpCommand};
 use crate::kirc::emits::{
     emit_change_nick_failed, emit_server_status, emit_system_message, emit_ui_event,
 };
@@ -71,8 +72,7 @@ pub(super) async fn server_actor(
             Some(result) = stream.next() => {
                 match result {
                     Ok(message) => {
-                        debug!(event = "irc_message", command = ?message.command);
-                        let _ = handle_message(server_id, message, &app_handle);
+                        let _ = handle_message(&client, server_id, message, &app_handle);
                     }
                     Err(irc::error::Error::NoUsableNick) => {
                         // 사용 가능한 닉네임이 없을때 (단순 닉네임 중복 등)
@@ -118,7 +118,7 @@ pub(super) async fn server_actor(
 
                         match Message::with_tags(None, Some(current_nick), "PRIVMSG", vec![&target, &message]) {
                                 Ok(msg) => {
-                                    handle_message(server_id, msg, &app_handle).expect("Failed to handle message");
+                                    handle_message(&client, server_id, msg, &app_handle).expect("Failed to handle message");
                                 }
                                 Err(_) => {
                                     error!("Failed to create echo message");
@@ -167,8 +167,10 @@ fn fail_state(server_id: ServerId, app_handle: AppHandle, message: String) {
     let _ = emit_server_status(&app_handle, server_id, ServerStatus::Failed);
 }
 
-#[instrument(skip(app_handle, message), level = "trace")]
+/// 서버에서 클라이언트로 보낸 메세지 핸들링
+#[instrument(skip(client, app_handle, message), level = "trace")]
 fn handle_message(
+    client: &Client,
     server_id: ServerId,
     message: Message,
     app_handle: &AppHandle,
@@ -177,9 +179,14 @@ fn handle_message(
 
     match message.command {
         Command::PRIVMSG(target, content) => {
-            emit_ui_event(app_handle)
-                .user_message(server_id, target, source_nickname, content)
-                .emit()?;
+            if let Some(ctcp) = parse_ctcp(&content) {
+                info!(target = %target, content = %content, "Received CTCP message");
+                handle_ctcp(client, &source_nickname, ctcp);
+            } else {
+                emit_ui_event(app_handle)
+                    .user_message(server_id, target, source_nickname, content)
+                    .emit()?;
+            }
         }
         Command::JOIN(chanlist, _chankey, _real_name) => {
             emit_ui_event(app_handle)
@@ -254,8 +261,65 @@ fn handle_message(
         }
         _ => {
             // TODO: Command 다른것도 추가하기
+            debug!(event = "unprocessed_irc_message", command = ?message.command);
         }
     }
 
     Ok(())
+}
+
+fn handle_ctcp(client: &Client, source_nickname: &str, ctcp: CtcpCommand) {
+    debug!(event = "handle_ctcp_message", command = ?ctcp);
+    if let Some(reply) = get_ctcp_reply(&ctcp) {
+        let _ = client.send_notice(source_nickname, &reply);
+    } else {
+        if let CtcpCommand::Unknown(msg) = ctcp {
+            warn!(event = "unknown_ctcp_command", message = %msg)
+        }
+    }
+}
+
+fn get_ctcp_reply(ctcp: &CtcpCommand) -> Option<String> {
+    match ctcp {
+        CtcpCommand::Version => Some("\x01VERSION kirc-rs v0.1\x01".to_string()),
+        CtcpCommand::Ping(payload) => Some(format!("\x01PING {}\x01", payload)),
+        CtcpCommand::Time => {
+            let now = chrono::Local::now().to_rfc2822();
+            Some(format!("\x01TIME {}\x01", now))
+        }
+        CtcpCommand::Unknown(_) => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::kirc::ctcp::CtcpCommand;
+
+    #[test]
+    fn test_get_ctcp_reply_version() {
+        let reply = get_ctcp_reply(&CtcpCommand::Version);
+        assert_eq!(reply, Some("\x01VERSION kirc v0.1\x01".to_string()));
+    }
+
+    #[test]
+    fn test_get_ctcp_reply_ping() {
+        let reply = get_ctcp_reply(&CtcpCommand::Ping("12345".to_string()));
+        assert_eq!(reply, Some("\x01PING 12345\x01".to_string()));
+    }
+
+    #[test]
+    fn test_get_ctcp_reply_time() {
+        let reply = get_ctcp_reply(&CtcpCommand::Time);
+        assert!(reply.is_some());
+        let reply_str = reply.unwrap();
+        assert!(reply_str.starts_with("\x01TIME "));
+        assert!(reply_str.ends_with("\x01"));
+    }
+
+    #[test]
+    fn test_get_ctcp_reply_unknown() {
+        let reply = get_ctcp_reply(&CtcpCommand::Unknown("FOO".to_string()));
+        assert_eq!(reply, None);
+    }
 }

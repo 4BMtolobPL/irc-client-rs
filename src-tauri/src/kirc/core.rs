@@ -270,26 +270,56 @@ fn handle_message(
 
 fn handle_ctcp(client: &Client, source_nickname: &str, ctcp: CtcpCommand) {
     debug!(event = "handle_ctcp_message", command = ?ctcp);
-    match ctcp {
-        CtcpCommand::Version => {
-            let reply = "\x01VERSION kirc v0.1\x01";
-            let _ = client.send_notice(source_nickname, reply);
-        }
-
-        CtcpCommand::Ping(payload) => {
-            let reply = format!("\x01PING {}\x01", payload);
-            let _ = client.send_notice(source_nickname, &reply);
-        }
-
-        CtcpCommand::Time => {
-            let now = chrono::Local::now().to_rfc2822();
-            let reply = format!("\x01TIME {}\x01", now);
-            let _ = client.send_notice(source_nickname, &reply);
-        }
-
-        CtcpCommand::Unknown(msg) => {
-            // 무시 (보통 응답 안 함)
+    if let Some(reply) = get_ctcp_reply(&ctcp) {
+        let _ = client.send_notice(source_nickname, &reply);
+    } else {
+        if let CtcpCommand::Unknown(msg) = ctcp {
             warn!(event = "unknown_ctcp_command", message = %msg)
         }
+    }
+}
+
+fn get_ctcp_reply(ctcp: &CtcpCommand) -> Option<String> {
+    match ctcp {
+        CtcpCommand::Version => Some("\x01VERSION kirc-rs v0.1\x01".to_string()),
+        CtcpCommand::Ping(payload) => Some(format!("\x01PING {}\x01", payload)),
+        CtcpCommand::Time => {
+            let now = chrono::Local::now().to_rfc2822();
+            Some(format!("\x01TIME {}\x01", now))
+        }
+        CtcpCommand::Unknown(_) => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::kirc::ctcp::CtcpCommand;
+
+    #[test]
+    fn test_get_ctcp_reply_version() {
+        let reply = get_ctcp_reply(&CtcpCommand::Version);
+        assert_eq!(reply, Some("\x01VERSION kirc v0.1\x01".to_string()));
+    }
+
+    #[test]
+    fn test_get_ctcp_reply_ping() {
+        let reply = get_ctcp_reply(&CtcpCommand::Ping("12345".to_string()));
+        assert_eq!(reply, Some("\x01PING 12345\x01".to_string()));
+    }
+
+    #[test]
+    fn test_get_ctcp_reply_time() {
+        let reply = get_ctcp_reply(&CtcpCommand::Time);
+        assert!(reply.is_some());
+        let reply_str = reply.unwrap();
+        assert!(reply_str.starts_with("\x01TIME "));
+        assert!(reply_str.ends_with("\x01"));
+    }
+
+    #[test]
+    fn test_get_ctcp_reply_unknown() {
+        let reply = get_ctcp_reply(&CtcpCommand::Unknown("FOO".to_string()));
+        assert_eq!(reply, None);
     }
 }
